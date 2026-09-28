@@ -98,10 +98,20 @@ def account_summaries():
             online = time.time() - int(value('heartbeat')) < 45
         except ValueError:
             online = False
+        try:
+            with (state / 'activity.log').open(encoding='utf-8', errors='replace') as f:
+                account_log = ''.join(deque(f, maxlen=90))[-14000:]
+        except OSError:
+            account_log = ''
+        try:
+            account_next_run = datetime.fromtimestamp(int(value('next-run'))).strftime('%d/%m/%Y kl. %H:%M')
+        except (ValueError, OverflowError, OSError):
+            account_next_run = 'Ikke planlagt'
         result.append({'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
-                       'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit')})
+                       'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit'),
+                       'next_run': account_next_run, 'log': account_log or 'Der er endnu ingen aktivitet for denne konto.'})
     return result
 
 
