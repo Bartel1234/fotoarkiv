@@ -34,6 +34,7 @@ async function refresh() {
     el('free').textContent = s.total ? human(s.free) + ' fri' : '–';
     el('disk-bar').style.width = s.total ? Math.min(100, Math.max(0, 100 * (s.total - s.free) / s.total)) + '%' : '0%';
     el('updated').textContent = 'Opdateret ' + new Date().toLocaleTimeString('da-DK', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+    renderAccounts(s.accounts || [], s);
   } catch (error) {
     el('status').textContent = 'Forbindelsen er afbrudt';
     el('status').dataset.tone = 'error';
@@ -42,10 +43,56 @@ async function refresh() {
   }
 }
 el('refresh').addEventListener('click', refresh);
-el('open-login').addEventListener('click', () => {
-  const popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
-  if (popup) popup.focus();
-  else window.location.href = '/login/';
+const token = document.querySelector('#start-form input[name=token]').value;
+async function postAccount(url, data) {
+  const response = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...data, token})});
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+function actionButton(label, account, action) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'outline'; button.textContent = label;
+  button.addEventListener('click', async () => {
+    let popup;
+    if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
+    try {
+      await postAccount('/api/accounts/' + encodeURIComponent(account) + '/' + action, {});
+      if (popup) popup.focus();
+      if (action === 'login' && !popup) window.location.href = '/login/';
+      if (action === 'start') refresh();
+    } catch (error) {
+      if (popup) popup.close();
+      el('account-message').textContent = error.message;
+    }
+  });
+  return button;
+}
+function renderAccounts(accounts, summary) {
+  const list = el('account-list'); list.replaceChildren();
+  const legacy = {email: 'legacy', folder: 'Hovedmappen (eksisterende konto)', count: null, bytes: null,
+                  online: summary.online, running: summary.running, last_run: summary.last_run};
+  for (const account of [legacy, ...accounts]) {
+    const card = document.createElement('div'); card.className = 'account-card';
+    const detail = document.createElement('div');
+    const title = document.createElement('strong'); title.textContent = account.email === 'legacy' ? 'Eksisterende konto' : account.email;
+    const info = document.createElement('small');
+    info.textContent = (account.online ? account.running ? 'Synkroniserer' : 'Klar' : 'Offline') +
+      ' · ' + account.folder + (account.count === null ? '' : ' · ' + fmt(account.count) + ' filer / ' + human(account.bytes));
+    detail.append(title, info);
+    const controls = document.createElement('div'); controls.className = 'account-actions';
+    controls.append(actionButton('Google-login ↗', account.email, 'login'), actionButton('Start backup', account.email, 'start'));
+    card.append(detail, controls); list.append(card);
+  }
+}
+el('add-account-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const email = el('account-email').value.trim();
+  try {
+    const result = await postAccount('/api/accounts', {email});
+    el('account-message').textContent = 'Konto tilføjet. Mappe: ' + result.folder;
+    el('add-account-form').reset();
+    await refresh();
+  } catch (error) { el('account-message').textContent = error.message; }
 });
 refresh();
 setInterval(refresh, 8000);
