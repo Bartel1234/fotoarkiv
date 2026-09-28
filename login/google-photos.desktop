@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Google Fotos login
-Exec=/bin/sh /controller/login-loop.sh
-Terminal=false
-X-GNOME-Autostart-enabled=true
