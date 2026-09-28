@@ -40,6 +40,8 @@ def inventory():
     count, size, recent = 0, 0, []
     for root, _, files in os.walk(PHOTOS):
         for name in files:
+            if name.startswith('.') or name.endswith(('.crdownload', '.part', '.tmp')):
+                continue
             try:
                 st = (Path(root) / name).stat()
                 count += 1
@@ -79,6 +81,8 @@ def account_summaries():
             count = size = 0
             for root, _, files in os.walk(PHOTOS / email):
                 for file in files:
+                    if file.startswith('.') or file.endswith(('.crdownload', '.part', '.tmp')):
+                        continue
                     try:
                         count += 1
                         size += (Path(root) / file).stat().st_size
