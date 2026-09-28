@@ -4,15 +4,14 @@ account=$1
 if [ "$account" = legacy ]; then
   state=/control
   destination=/download
-  run_sync() { /app/sync.sh; }
+  profile_tmp=/tmp
 else
   state="/control/accounts/$account"
   destination="/download/$account"
   profile_tmp="/accounts/$account"
-  run_sync() { TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -dldir "$destination" -run /app/fix_time.sh; }
 fi
-mkdir -p "$state" "$destination"
-if [ "$account" != legacy ]; then mkdir -p "$profile_tmp/gphotos-cdp"; fi
+run_sync() { TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -dldir "$destination"; }
+mkdir -p "$state" "$destination" "$profile_tmp/gphotos-cdp"
 NEXT="$state/next-run"
 REQUEST="$state/start-request"
 RUNNING="$state/running"
