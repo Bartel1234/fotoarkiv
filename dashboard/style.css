@@ -6,3 +6,5 @@
 .account-card strong, .account-card small { display:block; overflow-wrap:anywhere; }
 .account-card small { margin-top:5px; opacity:.75; }
 .account-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.account-actions .outline { background:#f0edff; color:#513dc7; border-color:#c9c0fa; }
+.account-actions .outline:hover { background:#e3ddff; }
