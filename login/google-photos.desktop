@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
 Name=Google Fotos login
-Exec=/usr/bin/google-chrome --user-data-dir=/config --no-sandbox --disable-setuid-sandbox --disable-gpu --disable-nacl --disable-dev-shm-usage https://photos.google.com
+Exec=/bin/sh /controller/login-loop.sh
 Terminal=false
 X-GNOME-Autostart-enabled=true
