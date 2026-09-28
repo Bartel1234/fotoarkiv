@@ -23,32 +23,16 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
    ```
 
 4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
-5. Start login-browseren:
-
-   ```sh
-   docker compose --profile login up -d login
-   ```
-
-6. Åbn `http://DIN-UNRAID-IP:6080`. Åbn en terminal i skrivebordet, og kør:
-
-   ```sh
-   google-chrome --user-data-dir=/config --no-sandbox https://photos.google.com
-   ```
-
-7. Log ind på din egen Google-konto. **Luk Chrome-vinduet helt**. Stop derefter login-containeren:
-
-   ```sh
-   docker compose --profile login stop login
-   ```
-
-8. Tryk **Start synkronisering nu** på dashboardet. Efterfølgende kører den dagligt omkring klokkeslættet `SYNC_HOUR` fra `.env`.
+5. Tryk **Åbn Google-login** under **Google-login** i portalen. Skrivebordet vises på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos automatisk. Giv den lidt tid første gang.
+6. Log ind på din egen Google-konto, og **luk Chrome-vinduet helt**.
+7. Tryk **Start synkronisering nu** på dashboardet. Efterfølgende kører den dagligt omkring klokkeslættet `SYNC_HOUR` fra `.env`.
 
 ## Betjening
 
 - Status, antal filer, diskforbrug og seneste 100 loglinjer vises på dashboardet.
 - `BACKUP_DIR` får filer fra Google Fotos. `APPDATA_DIR/chrome` indeholder Google-login og må ikke deles med andre.
-- Hvis login udløber, gentages trin 5–7. Synkroniseringen genoptages normalt fra gemt position.
-- Port 6080 har ikke særskilt adgangskode. Start kun login-containeren, når den bruges. Udgiv hverken 6080 eller 8787 direkte på internettet; brug dit LAN eller VPN.
+- Hvis login udløber, åbn **Google-login** igen. Synkroniseringen genoptages normalt fra gemt position.
+- Login-containeren har ingen åben port på Unraid og nås gennem portalen. Udgiv ikke port 8787 direkte på internettet; brug dit LAN eller VPN.
 - Første download af et stort bibliotek kan tage dage. Den aktuelle kørselslog findes også i `APPDATA_DIR/control/activity.log`.
 
 ## Begrænsninger
