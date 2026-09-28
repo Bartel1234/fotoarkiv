@@ -3,6 +3,7 @@ import asyncio
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import time
@@ -14,11 +15,15 @@ from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
 CONTROL = Path('/control')
 PHOTOS = Path('/photos')
+ACCOUNTS = Path('/accounts')
+ACCOUNT_LIST = CONTROL / 'accounts.txt'
 PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
 LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
 ASSETS = Path(__file__).parent
 _cache = {'at': 0, 'data': {}}
+_account_cache = {'at': 0, 'counts': {}}
+EMAIL = re.compile(r'^[a-z0-9][a-z0-9._+-]{0,63}@[a-z0-9][a-z0-9.-]{0,62}\.[a-z]{2,24}$')
 
 
 def read(name, default=''):
@@ -58,6 +63,48 @@ def inventory():
     return data
 
 
+def account_names():
+    try:
+        return [name for name in ACCOUNT_LIST.read_text(encoding='utf-8').splitlines() if EMAIL.fullmatch(name)]
+    except OSError:
+        return []
+
+
+def account_summaries():
+    result = []
+    now = time.monotonic()
+    if now - _account_cache['at'] > 30:
+        counts = {}
+        for email in account_names():
+            count = size = 0
+            for root, _, files in os.walk(PHOTOS / email):
+                for file in files:
+                    try:
+                        count += 1
+                        size += (Path(root) / file).stat().st_size
+                    except OSError:
+                        pass
+            counts[email] = (count, size)
+        _account_cache.update(at=now, counts=counts)
+    for email in account_names():
+        state = CONTROL / 'accounts' / email
+        count, size = _account_cache['counts'].get(email, (0, 0))
+        def value(name):
+            try:
+                return (state / name).read_text(encoding='utf-8').strip()
+            except OSError:
+                return ''
+        try:
+            online = time.time() - int(value('heartbeat')) < 45
+        except ValueError:
+            online = False
+        result.append({'email': email, 'folder': email, 'count': count, 'bytes': size,
+                       'online': online, 'running': online and (state / 'running').exists(),
+                       'pending': (state / 'start-request').exists(),
+                       'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit')})
+    return result
+
+
 def status():
     try:
         with (CONTROL / 'activity.log').open(encoding='utf-8', errors='replace') as f:
@@ -87,7 +134,7 @@ def status():
         label, tone = 'Alt er opdateret', 'good'
     else:
         label, tone = 'Klar til første kørsel', 'pending'
-    return {**inventory(), 'label': label, 'tone': tone, 'online': online,
+    return {**inventory(), 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
             'running': running, 'pending': pending, 'last_run': read('last-run') or 'Ingen endnu',
             'next_run': next_run, 'last_exit': exit_code, 'started': read('running') if running else '',
             'log': log or 'Der er endnu ingen aktivitet.'}
@@ -117,7 +164,7 @@ async def home(request):
 
 
 async def api_status(request):
-    return web.json_response(status())
+    return web.json_response(await asyncio.to_thread(status))
 
 
 async def asset(request):
@@ -133,6 +180,47 @@ async def start(request):
     if not (CONTROL / 'running').exists():
         (CONTROL / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
     raise web.HTTPSeeOther('/')
+
+
+async def account_action(request):
+    if request.content_type != 'application/json' or (request.content_length or 0) > 4096:
+        raise web.HTTPBadRequest(text='Forkert formular')
+    try:
+        data = await request.json()
+    except (ValueError, TypeError):
+        raise web.HTTPBadRequest(text='Ugyldig JSON')
+    if not hmac.compare_digest(str(data.get('token', '')), TOKEN):
+        raise web.HTTPForbidden(text='Ugyldig formular')
+    action = request.match_info.get('action', 'add')
+    if action == 'add':
+        email = str(data.get('email', '')).strip().lower()
+        if len(email) > 128 or not EMAIL.fullmatch(email):
+            raise web.HTTPBadRequest(text='Angiv en gyldig mailadresse')
+        async with request.app['account_lock']:
+            names = account_names()
+            if email in names:
+                raise web.HTTPConflict(text='Kontoen findes allerede')
+            for folder in (ACCOUNTS / email, PHOTOS / email, CONTROL / 'accounts' / email):
+                if folder.is_symlink():
+                    raise web.HTTPConflict(text='Mappen kan ikke bruges')
+                folder.mkdir(parents=True, exist_ok=True)
+            (ACCOUNTS / email / 'gphotos-cdp').mkdir(exist_ok=True)
+            tmp = ACCOUNT_LIST.with_suffix('.tmp')
+            tmp.write_text(''.join(name + '\n' for name in [*names, email]), encoding='utf-8')
+            tmp.replace(ACCOUNT_LIST)
+            _account_cache['at'] = 0
+        return web.json_response({'email': email, 'folder': email}, status=201)
+    email = request.match_info['email']
+    if email != 'legacy' and email not in account_names():
+        raise web.HTTPNotFound(text='Ukendt konto')
+    if action == 'login':
+        (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
+    elif action == 'start':
+        state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+        (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
+    else:
+        raise web.HTTPNotFound()
+    return web.json_response({'ok': True})
 
 
 async def proxy(request):
@@ -193,10 +281,13 @@ if __name__ == '__main__':
     if PASSWORD == 'SKIFT_TIL_EN_LANG_ADGANGSKODE' or len(PASSWORD) < 12:
         raise SystemExit('Sæt APP_PASSWORD til mindst 12 tegn i .env')
     app = web.Application(middlewares=[auth])
+    app['account_lock'] = asyncio.Lock()
     app.cleanup_ctx.append(client_session)
     app.router.add_get('/', home)
     app.router.add_get('/api/status', api_status)
     app.router.add_get('/{name:style.css|app.js}', asset)
     app.router.add_post('/start', start)
+    app.router.add_post('/api/accounts', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|start}', account_action)
     app.router.add_route('*', '/{tail:.*}', proxy)
     web.run_app(app, host='0.0.0.0', port=8787)
