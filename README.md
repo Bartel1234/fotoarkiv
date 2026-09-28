@@ -2,13 +2,13 @@
 
 > Status: Projektet er testet lokalt for webinterface og styring. En fuld download fra Google Fotos er endnu ikke verificeret på en Unraid-server med en rigtig konto.
 
-Et lokalt webinterface til automatisk download fra Google Fotos. Synkroniseringen bruger [gphotos-cdp](https://github.com/perkeep/gphotos-cdp) via [Jake Whartons Docker-image](https://github.com/JakeWharton/docker-gphotos-sync). Det styrer Google Fotos i Chromium, gemmer den sidst hentede post og fortsætter inkrementelt. Ingen Google Takeout er nødvendig.
+Et lokalt webinterface til automatisk download fra Google Fotos. Synkroniseringen bruger [gphotos-cdp](https://github.com/perkeep/gphotos-cdp) via [Jake Whartons Docker-image](https://github.com/JakeWharton/docker-gphotos-sync). Det styrer Google Fotos i Chromium, gemmer den sidst hentede post og fortsætter inkrementelt. Ingen Google Takeout er nødvendig. Flere konti kan tilføjes i portalen. Hver konto får sin egen browserprofil, downloadposition og undermappe under `BACKUP_DIR`.
 
 Dashboardet viser live status, workerens tilgængelighed, antal filer, diskforbrug, seneste filer, næste kørsel og log. Det opdateres automatisk hvert 8. sekund.
 
 ## Opdatering fra forrige udgave
 
-Pak filerne oven i den eksisterende projektmappe. Behold din `.env`, `APPDATA_DIR` og `BACKUP_DIR`. Kør derefter `docker compose up -d --build`. Billeder og gemt Google-login ligger i mapperne fra `.env` og berøres ikke af opdateringen.
+Pak filerne oven i den eksisterende projektmappe. Behold din `.env`, `APPDATA_DIR` og `BACKUP_DIR`. Kør derefter `docker compose up -d --build`. Den tidligere konto vises som **Eksisterende konto** og beholder sin profil og sine filer direkte i hovedmappen. Nye konti får mapper navngivet efter mailadressen, eksempelvis `BACKUP_DIR/lars@bartel.dk`. Eksisterende billeder flyttes ikke automatisk. Tilføj ikke den tidligere konto igen med dens mailadresse, medmindre du ønsker en ny, separat download fra begyndelsen.
 
 ## Installation
 
@@ -23,15 +23,15 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
    ```
 
 4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
-5. Tryk **Åbn Google-login** under **Google-login** i portalen. Login-skrivebordet åbner i et popup-vindue på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos automatisk. Giv den lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
-6. Log ind på din egen Google-konto, **luk Chrome i login-skrivebordet**, og luk popup-vinduet.
-7. Tryk **Start synkronisering nu** på dashboardet. Efterfølgende kører den dagligt omkring klokkeslættet `SYNC_HOUR` fra `.env`.
+5. Under **Google Fotos-konti**, skriv mailadressen og tryk **Tilføj konto**. Mappen oprettes under `BACKUP_DIR`.
+6. Tryk **Google-login** på den ønskede konto. Login-skrivebordet åbner i et popup-vindue på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos med netop den kontos profil. Giv den lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
+7. Log ind, **luk Chrome i login-skrivebordet**, og luk popup-vinduet. Tryk derefter **Start backup** på kontoen. Hver konto har sin egen daglige kørselsplan omkring klokkeslættet `SYNC_HOUR`.
 
 ## Betjening
 
-- Status, antal filer, diskforbrug og seneste 100 loglinjer vises på dashboardet.
+- Dashboardet viser samlet antal filer samt status, antal filer og startknapper for hver ny konto. Hovedfeltets seneste kørsel og log gælder stadig den oprindelige konto.
 - `BACKUP_DIR` får filer fra Google Fotos. `APPDATA_DIR/chrome` indeholder Google-login og må ikke deles med andre.
-- Hvis login udløber, åbn **Google-login** igen. Synkroniseringen genoptages normalt fra gemt position.
+- Hvis login udløber, åbn **Google-login** for netop den konto igen. Synkroniseringen genoptages normalt fra dens gemte position.
 - Login-containeren har ingen åben port på Unraid og nås gennem portalen. Udgiv ikke port 8787 direkte på internettet; brug dit LAN eller VPN.
 - Første download af et stort bibliotek kan tage dage. Den aktuelle kørselslog findes også i `APPDATA_DIR/control/activity.log`.
 
@@ -41,4 +41,4 @@ Google tilbyder ikke en officiel API til denne type komplet, automatisk backup. 
 
 `gphotos-cdp` synkroniserer hovedbiblioteket. Fotos, som kun findes i Arkiv, og albumstruktur er ikke understøttet. Det sletter ikke fra Google Fotos. Sørg for en separat backup af Unraid-mappen og kontrollér konkrete billeder/videoer efter første kørsel.
 
-Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` kræver genstart af `sync`-containeren og får virkning efter næste kørsel.
+Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` kræver genstart af `sync`-containeren og får virkning efter næste kørsel. Flere konti kan synkronisere samtidig og bruge betydelig CPU, disk og netværk.
