@@ -24,7 +24,7 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
 
 4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
 5. Under **Google Fotos-konti**, skriv mailadressen og tryk **Tilføj konto**. Mappen oprettes under `BACKUP_DIR`.
-6. Tryk **Google-login** på den ønskede konto. Login-skrivebordet åbner i et popup-vindue på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos med netop den kontos profil. Giv den lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
+6. Tryk **Google-login** på den ønskede konto. Et popup-vindue åbner på samme adresse og beskyttes af portalens adgangskode. Chrome starter automatisk og fylder visningen med Google Fotos for den valgte konto; du skal ikke åbne en terminal. Giv browseren lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
 7. Log ind, **luk Chrome i login-skrivebordet**, og luk popup-vinduet. Tryk derefter **Start backup** på kontoen. Hver konto har sin egen daglige kørselsplan omkring klokkeslættet `SYNC_HOUR`.
 
 ## Betjening
@@ -33,6 +33,7 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
 - `BACKUP_DIR` får filer fra Google Fotos. `APPDATA_DIR/chrome` indeholder Google-login og må ikke deles med andre.
 - Hvis login udløber, åbn **Google-login** for netop den konto igen. Synkroniseringen genoptages normalt fra dens gemte position.
 - Login-containeren har ingen åben port på Unraid og nås gennem portalen. Udgiv ikke port 8787 direkte på internettet; brug dit LAN eller VPN.
+- Hvis browseren ikke åbner, kan opstartsfejlen ses i `APPDATA_DIR/control/login-browser.log` og med `docker compose logs login`. Login-visningen bruger stadig fjernvisning af browseren internt; Google-login kan ikke flyttes til den almindelige browser på din pc og samtidig genbruges direkte af synkroniseringsmotoren.
 - Første download af et stort bibliotek kan tage dage. Den aktuelle kørselslog findes også i `APPDATA_DIR/control/activity.log`.
 
 ## Begrænsninger
