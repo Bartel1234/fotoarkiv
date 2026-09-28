@@ -1,4 +1,5 @@
 const el = id => document.getElementById(id);
+let selectedAccount = null;
 const fmt = n => new Intl.NumberFormat('da-DK').format(n);
 const human = n => n >= 1024 ** 3 ? (n / 1024 ** 3).toLocaleString('da-DK', {maximumFractionDigits: 1}) + ' GB' : (n / 1024 ** 2).toLocaleString('da-DK', {maximumFractionDigits: 0}) + ' MB';
 async function refresh() {
@@ -6,19 +7,24 @@ async function refresh() {
     const response = await fetch('/api/status', {cache: 'no-store'});
     if (!response.ok) throw new Error('Kunne ikke hente status (' + response.status + ')');
     const s = await response.json();
-    el('status').textContent = s.label;
-    el('status').dataset.tone = s.tone;
-    el('status-detail').textContent = s.running ? 'Backup kører. Nye filer vises herunder, mens de hentes.' : s.pending ? 'Anmodningen er sendt. Synkroniseringen starter om lidt.' : s.tone === 'error' ? 'Se aktivitetsloggen for fejlen og kontrollér Google-login.' : 'Dine billeder bliver gemt lokalt på din Unraid-server.';
+    const active = (s.accounts || []).find(a => a.email === selectedAccount) || (s.accounts || [])[0];
+    if (active) selectedAccount = active.email;
+    const view = active || s;
+    const label = active ? active.running ? 'Synkroniserer ' + active.email : !active.online ? 'Konto offline: ' + active.email : active.pending ? 'Starter ' + active.email : active.last_exit && active.last_exit !== '0' ? 'Backup fejlede: ' + active.email : 'Klar: ' + active.email : s.label;
+    const tone = active ? !active.online || (active.last_exit && active.last_exit !== '0' && !active.running) ? 'error' : active.running ? 'active' : 'pending' : s.tone;
+    el('status').textContent = label;
+    el('status').dataset.tone = tone;
+    el('status-detail').textContent = view.running ? 'Backup kører. Nye filer vises herunder, mens de hentes.' : view.pending ? 'Anmodningen er sendt. Synkroniseringen starter om lidt.' : tone === 'error' ? 'Se aktivitetsloggen for fejlen og kontrollér Google-login.' : 'Dine billeder bliver gemt lokalt på din Unraid-server.';
     el('count').textContent = fmt(s.count);
     el('used').textContent = human(s.bytes);
-    el('last-run').textContent = s.last_run;
-    el('last-result').textContent = s.last_exit === '0' ? 'Kørsel gennemført' : s.last_exit ? 'Fejlede · exitkode ' + s.last_exit : 'Afventer første backup';
-    el('next-run').textContent = s.next_run;
-    el('activity-badge').textContent = s.running ? '● KØRER' : s.online ? '● LIVE' : '● OFFLINE';
-    el('activity-badge').className = 'badge ' + s.tone;
-    el('start').disabled = s.running || s.pending || !s.online;
-    el('start').textContent = s.running ? 'Synkroniserer…' : s.pending ? 'Starter snart…' : '↻   Start backup nu';
-    el('log').textContent = s.log;
+    el('last-run').textContent = view.last_run;
+    el('last-result').textContent = view.last_exit === '0' ? 'Kørsel gennemført' : view.last_exit ? 'Fejlede · exitkode ' + view.last_exit : 'Afventer første backup';
+    el('next-run').textContent = view.next_run;
+    el('activity-badge').textContent = view.running ? '● KØRER' : view.online ? '● LIVE' : '● OFFLINE';
+    el('activity-badge').className = 'badge ' + tone;
+    el('start').disabled = view.running || view.pending || !view.online;
+    el('start').textContent = view.running ? 'Synkroniserer…' : view.pending ? 'Starter snart…' : '↻   Start backup nu';
+    el('log').textContent = view.log;
     const list = el('recent');
     list.replaceChildren();
     if (!s.recent.length) list.textContent = 'Der er endnu ingen filer i backupmappen.';
@@ -53,6 +59,7 @@ function actionButton(label, account, action) {
   const button = document.createElement('button');
   button.type = 'button'; button.className = 'outline'; button.textContent = label;
   button.addEventListener('click', async () => {
+    selectedAccount = account;
     let popup;
     if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
     try {
@@ -73,6 +80,8 @@ function renderAccounts(accounts, summary) {
                   online: summary.online, running: summary.running, last_run: summary.last_run};
   for (const account of [legacy, ...accounts]) {
     const card = document.createElement('div'); card.className = 'account-card';
+    if (account.email === selectedAccount) card.style.borderColor = '#8370f5';
+    card.addEventListener('click', () => { selectedAccount = account.email; refresh(); });
     const detail = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = account.email === 'legacy' ? 'Eksisterende konto' : account.email;
     const info = document.createElement('small');
@@ -93,6 +102,12 @@ el('add-account-form').addEventListener('submit', async event => {
     el('add-account-form').reset();
     await refresh();
   } catch (error) { el('account-message').textContent = error.message; }
+});
+el('start-form').addEventListener('submit', async event => {
+  if (!selectedAccount) return;
+  event.preventDefault();
+  try { await postAccount('/api/accounts/' + encodeURIComponent(selectedAccount) + '/start', {}); await refresh(); }
+  catch (error) { el('account-message').textContent = error.message; }
 });
 refresh();
 setInterval(refresh, 8000);
