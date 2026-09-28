@@ -14,15 +14,13 @@ services:
       - "${DASHBOARD_PORT:-8787}:8787"
 
   sync:
-    image: jakewharton/gphotos-sync:trunk
+    image: fotoarkiv-browser:local
+    build: ./login
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/controller/worker.sh"]
     environment:
       TZ: ${TZ:-Europe/Copenhagen}
       SYNC_HOUR: ${SYNC_HOUR:-3}
-      CHROMIUM_USER_FLAGS: "--no-sandbox"
-      PUID: ${PUID:-99}
-      PGID: ${PGID:-100}
     volumes:
       - ${APPDATA_DIR:-./appdata}/chrome:/tmp/gphotos-cdp
       - ${APPDATA_DIR:-./appdata}/accounts:/accounts
@@ -30,8 +28,10 @@ services:
       - ${BACKUP_DIR:?Set BACKUP_DIR in .env}:/download
       - ./worker.sh:/controller/worker.sh:ro
       - ./account-worker.sh:/controller/account-worker.sh:ro
+    shm_size: "1gb"
 
   login:
+    image: fotoarkiv-browser:local
     build: ./login
     restart: unless-stopped
     environment:
