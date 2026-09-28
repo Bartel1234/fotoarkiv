@@ -1,37 +1,25 @@
 #!/bin/sh
 set -u
-mkdir -p /control /download
-NEXT=/control/next-run
-REQUEST=/control/start-request
-RUNNING=/control/running
-LOG=/control/activity.log
-if [ ! -f "$NEXT" ]; then
-  echo "$(($(date +%s) + 86400))" > "$NEXT"
-fi
-trap 'exit 0' TERM INT
-echo "$(date '+%Y-%m-%d %H:%M:%S') Worker klar" >> "$LOG"
+mkdir -p /control/workers /control/accounts /accounts /download
+rm -f /control/workers/*.pid
+trap 'jobs -p | xargs -r kill; wait; exit 0' TERM INT
+
+start_worker() {
+  account=$1
+  pidfile="/control/workers/$account.pid"
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then return; fi
+  /bin/sh /controller/account-worker.sh "$account" &
+  echo "$!" > "$pidfile"
+}
+
+# Preserve the previous single-account backup at its original paths.
+start_worker legacy
 while :; do
-  NOW=$(date +%s)
-  echo "$NOW" > /control/heartbeat
-  DUE=$(cat "$NEXT" 2>/dev/null || echo 0)
-  if [ -f "$REQUEST" ] || [ "$NOW" -ge "$DUE" ]; then
-    rm -f "$REQUEST"
-    date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering" >> "$LOG"
-    /app/sync.sh >> "$LOG" 2>&1
-    RESULT=$?
-    echo "$RESULT" > /control/last-exit
-    date '+%Y-%m-%d %H:%M:%S' > /control/last-run
-    echo "$(date '+%Y-%m-%d %H:%M:%S') Færdig, exitkode $RESULT" >> "$LOG"
-    rm -f "$RUNNING"
-    # Planlæg altid næste forsøg til næste dag klokken SYNC_HOUR.
-    HOUR=${SYNC_HOUR:-3}
-    case "$HOUR" in *[!0-9]*|'') HOUR=3;; esac
-    TODAY=$(date '+%Y-%m-%d')
-    TARGET=$(date -d "$TODAY $HOUR:00:00" +%s 2>/dev/null || echo 0)
-    NOW=$(date +%s)
-    if [ "$TARGET" -le "$NOW" ]; then TARGET=$((TARGET + 86400)); fi
-    echo "$TARGET" > "$NEXT"
+  if [ -f /control/accounts.txt ]; then
+    while IFS= read -r account; do
+      case "$account" in *[!a-z0-9@._+-]*|'') continue;; esac
+      start_worker "$account"
+    done < /control/accounts.txt
   fi
   sleep 10
 done
