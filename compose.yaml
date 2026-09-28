@@ -5,6 +5,7 @@ services:
     environment:
       APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env}
       TZ: ${TZ:-Europe/Copenhagen}
+      LOGIN_URL: http://login:80
     volumes:
       - ${APPDATA_DIR:-./appdata}/control:/control
       - ${BACKUP_DIR:?Set BACKUP_DIR in .env}:/photos:ro
@@ -29,11 +30,10 @@ services:
 
   login:
     image: dorowu/ubuntu-desktop-lxde-vnc:latest
-    profiles: ["login"]
+    restart: unless-stopped
     environment:
       RESOLUTION: 1280x800
     volumes:
       - ${APPDATA_DIR:-./appdata}/chrome:/config
-    ports:
-      - "${LOGIN_PORT:-6080}:80"
+      - ./login/google-photos.desktop:/root/.config/autostart/google-photos.desktop:ro
     shm_size: "1gb"
