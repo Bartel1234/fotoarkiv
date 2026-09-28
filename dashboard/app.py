@@ -1,4 +1,5 @@
 import base64
+import asyncio
 import hmac
 import json
 import os
@@ -7,14 +8,15 @@ import shutil
 import time
 from collections import deque
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
+from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
 CONTROL = Path('/control')
 PHOTOS = Path('/photos')
 PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
+LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
 ASSETS = Path(__file__).parent
 _cache = {'at': 0, 'data': {}}
 
@@ -91,79 +93,110 @@ def status():
             'log': log or 'Der er endnu ingen aktivitet.'}
 
 
-class Handler(BaseHTTPRequestHandler):
-    def authorized(self):
-        header = self.headers.get('Authorization', '')
-        if not header.startswith('Basic '):
-            return False
+@web.middleware
+async def auth(request, handler):
+    header = request.headers.get('Authorization', '')
+    try:
+        raw = base64.b64decode(header.removeprefix('Basic '), validate=True).decode('utf-8')
+        _, supplied = raw.split(':', 1)
+        valid = header.startswith('Basic ') and hmac.compare_digest(supplied, PASSWORD)
+    except (ValueError, UnicodeError):
+        valid = False
+    if not valid:
+        return web.Response(status=401, text='Login kræves', headers={'WWW-Authenticate': 'Basic realm="Fotoarkiv Backup"'})
+    response = await handler(request)
+    response.headers.setdefault('Cache-Control', 'no-store')
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    return response
+
+
+async def home(request):
+    template = (ASSETS / 'index.html').read_text(encoding='utf-8')
+    return web.Response(text=template.replace('%%CSRF_TOKEN%%', TOKEN), content_type='text/html',
+                        headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
+
+
+async def api_status(request):
+    return web.json_response(status())
+
+
+async def asset(request):
+    return web.FileResponse(ASSETS / request.match_info['name'])
+
+
+async def start(request):
+    if request.content_type != 'application/x-www-form-urlencoded' or request.content_length is None or not 0 < request.content_length <= 4096:
+        raise web.HTTPBadRequest(text='Forkert formular')
+    body = parse_qs(await request.text())
+    if not hmac.compare_digest(body.get('token', [''])[0], TOKEN):
+        raise web.HTTPForbidden(text='Ugyldig formular')
+    if not (CONTROL / 'running').exists():
+        (CONTROL / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
+    raise web.HTTPSeeOther('/')
+
+
+async def proxy(request):
+    # The desktop app uses absolute asset and WebSocket paths, so route all
+    # non-dashboard paths to it. It is reachable only through this auth guard.
+    path = request.path.removeprefix('/login') if request.path.startswith('/login/') else request.path
+    if not path:
+        path = '/'
+    upstream = LOGIN_URL + path + ('?' + request.query_string if request.query_string else '')
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in
+               {'authorization', 'host', 'connection', 'upgrade', 'content-length', 'accept-encoding'}}
+    session = request.app['session']
+    if request.headers.get('Upgrade', '').lower() == 'websocket':
+        browser = web.WebSocketResponse()
+        await browser.prepare(request)
         try:
-            raw = base64.b64decode(header[6:], validate=True).decode('utf-8')
-            _, supplied = raw.split(':', 1)
-        except (ValueError, UnicodeError):
-            return False
-        return hmac.compare_digest(supplied, PASSWORD)
+            async with session.ws_connect(upstream, headers=headers) as remote:
+                async def forward():
+                    async for msg in browser:
+                        if msg.type == WSMsgType.TEXT:
+                            await remote.send_str(msg.data)
+                        elif msg.type == WSMsgType.BINARY:
+                            await remote.send_bytes(msg.data)
+                        else:
+                            break
+                task = asyncio.create_task(forward())
+                try:
+                    async for msg in remote:
+                        if msg.type == WSMsgType.TEXT:
+                            await browser.send_str(msg.data)
+                        elif msg.type == WSMsgType.BINARY:
+                            await browser.send_bytes(msg.data)
+                        else:
+                            break
+                finally:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+        except Exception:
+            pass
+        return browser
+    try:
+        async with session.request(request.method, upstream, headers=headers, data=await request.read(), allow_redirects=False) as remote:
+            payload = await remote.read()
+            response_headers = {k: v for k, v in remote.headers.items() if k.lower() not in
+                                {'connection', 'transfer-encoding', 'content-length', 'content-encoding', 'x-frame-options', 'content-security-policy'}}
+            return web.Response(body=payload, status=remote.status, headers=response_headers)
+    except Exception:
+        raise web.HTTPBadGateway(text='Login-skrivebordet starter stadig. Prøv igen om lidt.')
 
-    def respond(self, body, code=200, mime='text/html; charset=utf-8'):
-        data = body.encode('utf-8')
-        self.send_response(code)
-        self.send_header('Content-Type', mime)
-        self.send_header('Content-Length', str(len(data)))
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Content-Security-Policy', "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'")
-        if code == 401:
-            self.send_header('WWW-Authenticate', 'Basic realm="Fotoarkiv Backup"')
-        self.end_headers()
-        self.wfile.write(data)
 
-    def guard(self):
-        if self.authorized():
-            return True
-        self.respond('Login kræves', 401, 'text/plain; charset=utf-8')
-        return False
-
-    def do_GET(self):
-        if not self.guard():
-            return
-        if self.path == '/':
-            template = (ASSETS / 'index.html').read_text(encoding='utf-8')
-            self.respond(template.replace('%%CSRF_TOKEN%%', TOKEN))
-        elif self.path == '/api/status':
-            self.respond(json.dumps(status(), ensure_ascii=False), mime='application/json; charset=utf-8')
-        elif self.path in ('/style.css', '/app.js'):
-            name = self.path[1:]
-            mime = 'text/css; charset=utf-8' if name.endswith('.css') else 'text/javascript; charset=utf-8'
-            self.respond((ASSETS / name).read_text(encoding='utf-8'), mime=mime)
-        else:
-            self.respond('Ikke fundet', 404)
-
-    def do_POST(self):
-        if not self.guard():
-            return
-        if self.path != '/start' or self.headers.get('Content-Type', '').split(';')[0] != 'application/x-www-form-urlencoded':
-            self.respond('Forkert forespørgsel', 400)
-            return
-        try:
-            length = int(self.headers.get('Content-Length', '0'))
-        except ValueError:
-            self.respond('Forkert længde', 400)
-            return
-        if not 0 < length <= 4096:
-            self.respond('Forkert længde', 400)
-            return
-        body = parse_qs(self.rfile.read(length).decode('utf-8', 'replace'))
-        if not hmac.compare_digest(body.get('token', [''])[0], TOKEN):
-            self.respond('Ugyldig formular', 403)
-            return
-        if not (CONTROL / 'running').exists():
-            (CONTROL / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
-        self.send_response(303)
-        self.send_header('Location', '/')
-        self.send_header('Content-Length', '0')
-        self.end_headers()
+async def client_session(app):
+    app['session'] = ClientSession(timeout=ClientTimeout(total=None, sock_connect=15))
+    yield
+    await app['session'].close()
 
 
 if __name__ == '__main__':
     if PASSWORD == 'SKIFT_TIL_EN_LANG_ADGANGSKODE' or len(PASSWORD) < 12:
         raise SystemExit('Sæt APP_PASSWORD til mindst 12 tegn i .env')
-    ThreadingHTTPServer(('0.0.0.0', 8787), Handler).serve_forever()
+    app = web.Application(middlewares=[auth])
+    app.cleanup_ctx.append(client_session)
+    app.router.add_get('/', home)
+    app.router.add_get('/api/status', api_status)
+    app.router.add_get('/{name:style.css|app.js}', asset)
+    app.router.add_post('/start', start)
+    app.router.add_route('*', '/{tail:.*}', proxy)
+    web.run_app(app, host='0.0.0.0', port=8787)
