@@ -42,5 +42,11 @@ async function refresh() {
   }
 }
 el('refresh').addEventListener('click', refresh);
+el('open-login').addEventListener('click', () => {
+  const panel = el('login-panel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden && !el('login-frame').src) el('login-frame').src = '/login/';
+  el('open-login').textContent = panel.hidden ? 'Åbn Google-login' : 'Skjul Google-login';
+});
 refresh();
 setInterval(refresh, 8000);
