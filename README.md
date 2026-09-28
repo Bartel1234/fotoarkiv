@@ -23,8 +23,8 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
    ```
 
 4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
-5. Tryk **Åbn Google-login** under **Google-login** i portalen. Skrivebordet vises på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos automatisk. Giv den lidt tid første gang.
-6. Log ind på din egen Google-konto, og **luk Chrome-vinduet helt**.
+5. Tryk **Åbn Google-login** under **Google-login** i portalen. Login-skrivebordet åbner i et popup-vindue på samme adresse og beskyttes af portalens adgangskode. Chrome åbner Google Fotos automatisk. Giv den lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
+6. Log ind på din egen Google-konto, **luk Chrome i login-skrivebordet**, og luk popup-vinduet.
 7. Tryk **Start synkronisering nu** på dashboardet. Efterfølgende kører den dagligt omkring klokkeslættet `SYNC_HOUR` fra `.env`.
 
 ## Betjening
