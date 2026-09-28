@@ -28,7 +28,13 @@ while :; do
     rm -f "$REQUEST"
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
-    run_sync >> "$LOG" 2>&1
+    run_sync >> "$LOG" 2>&1 &
+    sync_pid=$!
+    while kill -0 "$sync_pid" 2>/dev/null; do
+      date +%s > "$state/heartbeat"
+      sleep 10
+    done
+    wait "$sync_pid"
     result=$?
     echo "$result" > "$state/last-exit"
     date '+%Y-%m-%d %H:%M:%S' > "$state/last-run"
