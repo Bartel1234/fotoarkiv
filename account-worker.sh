@@ -26,6 +26,14 @@ while :; do
   case "$DUE" in *[!0-9]*|'') DUE=0;; esac
   if [ -f "$REQUEST" ] || [ "$NOW" -ge "$DUE" ]; then
     rm -f "$REQUEST"
+    while [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
+      echo "$(date '+%Y-%m-%d %H:%M:%S') Venter på at login-browseren lukkes: $account" >> "$LOG"
+      date +%s > "$state/heartbeat"
+      sleep 10
+    done
+    # Chrome leaves these symlinks behind if a container is restarted mid-download.
+    # No login browser may be active for this account at this point.
+    rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
     run_sync >> "$LOG" 2>&1 &
