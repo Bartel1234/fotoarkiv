@@ -43,10 +43,9 @@ async function refresh() {
 }
 el('refresh').addEventListener('click', refresh);
 el('open-login').addEventListener('click', () => {
-  const panel = el('login-panel');
-  panel.hidden = !panel.hidden;
-  if (!panel.hidden && !el('login-frame').src) el('login-frame').src = '/login/';
-  el('open-login').textContent = panel.hidden ? 'Åbn Google-login' : 'Skjul Google-login';
+  const popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
+  if (popup) popup.focus();
+  else window.location.href = '/login/';
 });
 refresh();
 setInterval(refresh, 8000);
