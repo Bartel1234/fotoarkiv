@@ -1,4 +1,7 @@
-FROM jakewharton/gphotos-sync:trunk AS sync-binaries
+FROM golang:alpine AS sync-binaries
+RUN apk add --no-cache git \
+    && CGO_ENABLED=0 go install github.com/perkeep/gphotos-cdp@e9d1979707191993f1c879ae93f8dd810697fd6e
+
 FROM dorowu/ubuntu-desktop-lxde-vnc:latest
 
 # The base image ships Chrome 89 and an obsolete Google APT signing key.
@@ -10,9 +13,9 @@ RUN find /etc/apt/sources.list.d -type f -exec sed -i '/dl.google.com\/linux\/ch
     && rm -rf /var/lib/apt/lists/* \
     && google-chrome --version
 
-# Both the interactive login and headless sync must open the same Chrome profile.
-# chromedp prefers a chromium executable; this wrapper selects the installed Chrome.
+# Use the same Chrome and profile format for login and headless sync.
 RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome --no-sandbox "$@"\n' > /usr/local/bin/chromium \
     && chmod +x /usr/local/bin/chromium
-COPY --from=sync-binaries /usr/bin/gphotos-cdp /usr/local/bin/gphotos-cdp
+COPY --from=sync-binaries /go/bin/gphotos-cdp /usr/local/bin/gphotos-cdp
+RUN gphotos-cdp -h >/dev/null 2>&1 || test "$?" -eq 2
 COPY fotoarkiv-supervisor.conf /etc/supervisor/conf.d/fotoarkiv.conf
