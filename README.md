@@ -43,3 +43,9 @@ Google tilbyder ikke en officiel API til denne type komplet, automatisk backup. 
 `gphotos-cdp` synkroniserer hovedbiblioteket. Fotos, som kun findes i Arkiv, og albumstruktur er ikke understøttet. Det sletter ikke fra Google Fotos. Sørg for en separat backup af Unraid-mappen og kontrollér konkrete billeder/videoer efter første kørsel.
 
 Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` kræver genstart af `sync`-containeren og får virkning efter næste kørsel. Flere konti kan synkronisere samtidig og bruge betydelig CPU, disk og netværk.
+
+## Fuld gennemgang ved ufuldstændigt arkiv
+
+Hvis antallet af hentede filer er meget lavere end i Google Fotos, skal du vælge **Gennemgå hele arkivet** ud for kontoen. Den eksisterende downloadposition gemmes i `APPDATA_DIR/control/accounts/<mail>/lastdone-before-rescan` (for den gamle konto i `APPDATA_DIR/control`), og gennemgangen starter forfra fra tidslinjens ældste del. Allerede hentede billedfiler slettes ikke. Nogle af dem kan blive hentet igen og erstattet. Første fulde gennemgang af et stort arkiv kan tage lang tid og kræver ledig plads. Undgå at starte Google-login for samme konto under kørsel.
+
+Syncmotoren venter nu på, at Google Fotos indlæser tidslinjen, og stopper med fejl, hvis siden ikke ruller. En afsluttet kørsel betyder stadig kun, at værktøjet nåede det, som webinterfacet viste. Sammenlign antal og de ældste årstal med Google Fotos, før du regner kopien for komplet.
