@@ -1,6 +1,10 @@
 FROM golang:alpine AS sync-binaries
 RUN apk add --no-cache git \
-    && CGO_ENABLED=0 go install github.com/perkeep/gphotos-cdp@e9d1979707191993f1c879ae93f8dd810697fd6e
+    && git clone https://github.com/perkeep/gphotos-cdp.git /src/gphotos-cdp \
+    && cd /src/gphotos-cdp \
+    && git checkout e9d1979707191993f1c879ae93f8dd810697fd6e
+COPY gphotos-cdp-main.go /src/gphotos-cdp/main.go
+RUN cd /src/gphotos-cdp && CGO_ENABLED=0 go build -o /go/bin/gphotos-cdp .
 
 FROM dorowu/ubuntu-desktop-lxde-vnc:latest
 
