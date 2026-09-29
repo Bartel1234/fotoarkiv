@@ -175,7 +175,7 @@ async def auth(request, handler):
 async def home(request):
     template = (ASSETS / 'index.html').read_text(encoding='utf-8')
     return web.Response(text=template.replace('%%CSRF_TOKEN%%', TOKEN), content_type='text/html',
-                        headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
+                        headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
 
 
 async def api_status(request):
