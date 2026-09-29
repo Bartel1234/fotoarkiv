@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
+from archive import setup as setup_archive
 
 CONTROL = Path('/control')
 PHOTOS = Path('/photos')
@@ -307,5 +308,7 @@ if __name__ == '__main__':
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
     app.router.add_post('/api/accounts/{email}/{action:login|start|rescan}', account_action)
+    setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
+                  lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)
     web.run_app(app, host='0.0.0.0', port=8787)
