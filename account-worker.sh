@@ -34,6 +34,16 @@ while :; do
     # Chrome leaves these symlinks behind if a container is restarted mid-download.
     # No login browser may be active for this account at this point.
     rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
+    # A full rescan preserves the downloaded item directories and archives
+    # the old cursor outside the download folder before starting from oldest.
+    if [ -f "$state/rescan-request" ]; then
+      if [ -f "$destination/.lastdone" ]; then
+        cp "$destination/.lastdone" "$state/lastdone-before-rescan"
+        rm "$destination/.lastdone"
+      fi
+      rm -f "$state/rescan-request"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') Starter fuld gennemgang; eksisterende filer bevares: $account" >> "$LOG"
+    fi
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
     run_sync >> "$LOG" 2>&1 &
