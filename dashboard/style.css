@@ -12,3 +12,26 @@
 .account-feedback { flex-basis:100%; min-height:18px; color:#5948c8; font-size:12px; font-weight:600; }
 .account-feedback:empty { display:none; }
 .account-actions .outline:disabled { opacity:.65; cursor:default; }
+
+.archive-panel { margin-top:18px; }
+.archive-panel>p { color:#52617a; font-size:13px; }
+.archive-toolbar,.archive-actions,.archive-pager { display:flex; gap:12px; align-items:end; flex-wrap:wrap; margin:14px 0; }
+.archive-toolbar label { display:grid; gap:5px; font-size:12px; color:#52617a; }
+.archive-toolbar select,.archive-toolbar input { min-width:210px; padding:10px; border:1px solid #ccd3e0; border-radius:9px; background:#fff; color:#18223a; }
+.archive-actions { align-items:center; }
+.archive-actions .note { margin:0; }
+.archive-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; min-height:90px; }
+.archive-card { min-width:0; border:1px solid #e0e4ed; border-radius:12px; padding:8px; background:#fff; }
+.archive-tile { width:100%; height:140px; border:0; border-radius:8px; background:#e8ecf5; display:grid; place-items:center; overflow:hidden; cursor:pointer; color:#566480; }
+.archive-tile img { width:100%; height:100%; object-fit:cover; }
+.archive-card strong { display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; margin-top:8px; }
+.archive-card small { display:block; color:#7b879c; font-size:10px; margin:4px 0; }
+.archive-check { font-size:12px; cursor:pointer; }
+.archive-pager { justify-content:center; align-items:center; }
+.archive-preview { max-width:min(95vw,1100px); max-height:95vh; border:0; border-radius:14px; padding:22px; background:#fff; box-shadow:0 25px 80px #10192e70; }
+.archive-preview::backdrop { background:#10192ecc; }
+.archive-preview #archive-close { position:absolute; top:8px; right:8px; border:0; background:#f1f3f8; border-radius:8px; padding:8px; cursor:pointer; }
+#archive-media { display:grid; place-items:center; }
+#archive-media img,#archive-media video { display:block; max-width:min(88vw,1000px); max-height:75vh; }
+#archive-caption { overflow-wrap:anywhere; font-size:13px; color:#52617a; }
+.archive-preview a.primary { display:inline-block; padding:10px 15px; border-radius:8px; }
