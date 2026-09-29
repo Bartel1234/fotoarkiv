@@ -38,8 +38,13 @@ while :; do
     # the old cursor outside the download folder before starting from oldest.
     if [ -f "$state/rescan-request" ]; then
       if [ -f "$destination/.lastdone" ]; then
-        cp "$destination/.lastdone" "$state/lastdone-before-rescan"
-        rm "$destination/.lastdone"
+        if cp "$destination/.lastdone" "$state/lastdone-before-rescan"; then
+          rm "$destination/.lastdone"
+        else
+          echo "$(date '+%Y-%m-%d %H:%M:%S') Kunne ikke gemme positionen; fuld gennemgang afbrudt: $account" >> "$LOG"
+          rm -f "$state/rescan-request"
+          continue
+        fi
       fi
       rm -f "$state/rescan-request"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Starter fuld gennemgang; eksisterende filer bevares: $account" >> "$LOG"
