@@ -2,6 +2,8 @@
 import asyncio
 import os
 import re
+import json
+import hashlib
 import time
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +33,7 @@ def account_root(request, account):
 
 def media_path(request, account, item, name):
     root = account_root(request, account)
-    if not ITEM.fullmatch(item) or not name or name.startswith('.') or name != Path(name).name or '/' in name or '\\' in name:
+    if not isinstance(item, str) or not isinstance(name, str) or not ITEM.fullmatch(item) or not name or name.startswith('.') or name != Path(name).name or '/' in name or '\\' in name:
         raise web.HTTPBadRequest(text='Ugyldig fil')
     folder = root / item
     path = folder / name
@@ -118,7 +120,7 @@ async def thumbnail(request):
         raise web.HTTPNotFound()
     stat = path.stat()
     key = request.match_info['account'] + '-' + request.match_info['item']
-    target = request.app['thumb_root'] / key / (str(stat.st_mtime_ns) + '-' + str(abs(hash(path.name))) + '.jpg')
+    target = request.app['thumb_root'] / key / (str(stat.st_mtime_ns) + '-' + hashlib.sha256(path.name.encode('utf-8')).hexdigest()[:16] + '.jpg')
     if not target.is_file():
         try:
             await asyncio.to_thread(create_thumb, path, target)
@@ -132,13 +134,16 @@ def next_chunk(iterator):
 
 
 async def download_zip(request):
-    if request.content_type != 'application/json' or (request.content_length or 0) > 100000:
+    if request.content_type != 'application/x-www-form-urlencoded' or (request.content_length or 0) > 100000:
         raise web.HTTPBadRequest(text='Ugyldig anmodning')
-    data = await request.json()
-    if not isinstance(data, dict) or not request.app['valid_token'](data.get('token', '')):
+    data = await request.post()
+    if not request.app['valid_token'](data.get('token', '')):
         raise web.HTTPForbidden(text='Ugyldig formular')
     account = data.get('account', '')
-    files = data.get('files', [])
+    try:
+        files = json.loads(data.get('files', '[]'))
+    except (ValueError, TypeError):
+        raise web.HTTPBadRequest(text='Ugyldigt filvalg')
     if not isinstance(files, list) or not 1 <= len(files) <= MAX_ZIP_FILES:
         raise web.HTTPBadRequest(text='Vælg mellem 1 og 500 filer')
     selected, total = [], 0
