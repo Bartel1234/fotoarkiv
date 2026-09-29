@@ -18,7 +18,7 @@ async function refresh() {
     el('count').textContent = fmt(s.count);
     el('used').textContent = human(s.bytes);
     el('last-run').textContent = view.last_run;
-    el('last-result').textContent = view.last_exit === '0' ? 'Kørsel gennemført' : view.last_exit ? 'Fejlede · exitkode ' + view.last_exit : 'Afventer første backup';
+    el('last-result').textContent = view.last_exit === '0' ? 'Kørsel afsluttet · kontrollér antal filer' : view.last_exit ? 'Fejlede · exitkode ' + view.last_exit : 'Afventer første backup';
     el('next-run').textContent = view.next_run;
     el('activity-badge').textContent = view.running ? '● KØRER' : view.online ? '● LIVE' : '● OFFLINE';
     el('activity-badge').className = 'badge ' + tone;
@@ -60,6 +60,7 @@ function actionButton(label, account, action) {
   button.type = 'button'; button.className = 'outline'; button.textContent = label;
   button.addEventListener('click', async () => {
     selectedAccount = account;
+    if (action === 'rescan' && !window.confirm('Start en fuld gennemgang fra de ældste billeder? De eksisterende filer bevares, men nogle kan blive hentet igen.')) return;
     let popup;
     if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
     try {
@@ -89,7 +90,7 @@ function renderAccounts(accounts, summary) {
       ' · ' + account.folder + (account.count === null ? '' : ' · ' + fmt(account.count) + ' filer / ' + human(account.bytes));
     detail.append(title, info);
     const controls = document.createElement('div'); controls.className = 'account-actions';
-    controls.append(actionButton('Google-login ↗', account.email, 'login'), actionButton('Start backup', account.email, 'start'));
+    controls.append(actionButton('Google-login ↗', account.email, 'login'), actionButton('Start backup', account.email, 'start'), actionButton('Gennemgå hele arkivet', account.email, 'rescan'));
     card.append(detail, controls); list.append(card);
   }
 }
