@@ -8,3 +8,7 @@
 .account-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .account-actions .outline { background:#f0edff; color:#513dc7; border-color:#c9c0fa; }
 .account-actions .outline:hover { background:#e3ddff; }
+
+.account-feedback { flex-basis:100%; min-height:18px; color:#5948c8; font-size:12px; font-weight:600; }
+.account-feedback:empty { display:none; }
+.account-actions .outline:disabled { opacity:.65; cursor:default; }
