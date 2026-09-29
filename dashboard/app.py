@@ -304,7 +304,7 @@ if __name__ == '__main__':
     app.cleanup_ctx.append(client_session)
     app.router.add_get('/', home)
     app.router.add_get('/api/status', api_status)
-    app.router.add_get('/{name:style.css|app.js}', asset)
+    app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
     app.router.add_post('/api/accounts/{email}/{action:login|start|rescan}', account_action)
