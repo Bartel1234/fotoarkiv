@@ -145,7 +145,7 @@ def status():
     elif exit_code and exit_code != '0':
         label, tone = 'Kræver opmærksomhed', 'error'
     elif exit_code == '0':
-        label, tone = 'Alt er opdateret', 'good'
+        label, tone = 'Seneste kørsel afsluttet', 'good'
     else:
         label, tone = 'Klar til første kørsel', 'pending'
     return {**inventory(), 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
