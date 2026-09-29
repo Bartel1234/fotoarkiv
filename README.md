@@ -49,3 +49,9 @@ Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` k
 Hvis antallet af hentede filer er meget lavere end i Google Fotos, skal du vælge **Gennemgå hele arkivet** ud for kontoen. Den eksisterende downloadposition gemmes i `APPDATA_DIR/control/accounts/<mail>/lastdone-before-rescan` (for den gamle konto i `APPDATA_DIR/control`), og gennemgangen starter forfra fra tidslinjens ældste del. Allerede hentede billedfiler slettes ikke. Nogle af dem kan blive hentet igen og erstattet. Første fulde gennemgang af et stort arkiv kan tage lang tid og kræver ledig plads. Undgå at starte Google-login for samme konto under kørsel.
 
 Syncmotoren venter nu på, at Google Fotos indlæser tidslinjen, og stopper med fejl, hvis siden ikke ruller. En afsluttet kørsel betyder stadig kun, at værktøjet nåede det, som webinterfacet viste. Sammenlign antal og de ældste årstal med Google Fotos, før du regner kopien for komplet.
+
+## Visning og download af lokale filer
+
+Åbn **Mine filer** i portalen på port 8787. Vælg konto, søg efter filnavn, blad gennem miniaturebillederne, og klik på et billede eller en video for at se den i browseren. **Hent fil** gemmer et enkelt originalt medie. Markér flere filer og vælg **Hent valgte som ZIP** for en lokal kopi. ZIP streames direkte til browseren uden en ekstra fuld ZIP-kopi på Unraid; der kan vælges højst 500 filer og 10 GB pr. download. Store biblioteker kan hentes i flere portioner.
+
+Arkivvisningen læser kun filerne under `BACKUP_DIR` og uploader intet til Google. Browseren kan ikke vise alle billed- og videoformater; en fil kan stadig hentes med **Hent fil**. Miniaturebilleder gemmes under `APPDATA_DIR/control/thumbnails`. Portalen kræver sin adgangskode også for visning og downloads; udgiv ikke port 8787 direkte på internettet.
