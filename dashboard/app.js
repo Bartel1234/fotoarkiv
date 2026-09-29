@@ -58,18 +58,31 @@ async function postAccount(url, data) {
 function actionButton(label, account, action) {
   const button = document.createElement('button');
   button.type = 'button'; button.className = 'outline'; button.textContent = label;
-  button.addEventListener('click', async () => {
+  button.addEventListener('click', async event => {
+    event.stopPropagation();
     selectedAccount = account;
     if (action === 'rescan' && !window.confirm('Start en fuld gennemgang fra de ældste billeder? De eksisterende filer bevares, men nogle kan blive hentet igen.')) return;
+    const feedback = button.closest('.account-card')?.querySelector('.account-feedback');
+    if (action === 'start' || action === 'rescan') {
+      button.disabled = true;
+      button.textContent = 'Sender anmodning…';
+      if (feedback) feedback.textContent = 'Sender startanmodning…';
+    }
     let popup;
     if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
     try {
       await postAccount('/api/accounts/' + encodeURIComponent(account) + '/' + action, {});
       if (popup) popup.focus();
       if (action === 'login' && !popup) window.location.href = '/login/';
-      if (action === 'start') refresh();
+      if (action === 'start' || action === 'rescan') {
+        if (feedback) feedback.textContent = 'Start er bestilt. Venter på synkroniseringsmotoren…';
+        await refresh();
+      }
     } catch (error) {
       if (popup) popup.close();
+      if (feedback) feedback.textContent = 'Kunne ikke starte: ' + error.message;
+      button.disabled = false;
+      button.textContent = label;
       el('account-message').textContent = error.message;
     }
   });
@@ -78,20 +91,30 @@ function actionButton(label, account, action) {
 function renderAccounts(accounts, summary) {
   const list = el('account-list'); list.replaceChildren();
   const legacy = {email: 'legacy', folder: 'Hovedmappen (eksisterende konto)', count: null, bytes: null,
-                  online: summary.online, running: summary.running, last_run: summary.last_run};
+                  online: summary.online, running: summary.running, pending: summary.pending, last_run: summary.last_run};
   for (const account of [legacy, ...accounts]) {
     const card = document.createElement('div'); card.className = 'account-card';
     if (account.email === selectedAccount) card.style.borderColor = '#8370f5';
-    card.addEventListener('click', () => { selectedAccount = account.email; refresh(); });
+    card.addEventListener('click', event => {
+      if (event.target.closest('button')) return;
+      selectedAccount = account.email; refresh();
+    });
     const detail = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = account.email === 'legacy' ? 'Eksisterende konto' : account.email;
     const info = document.createElement('small');
-    info.textContent = (account.online ? account.running ? 'Synkroniserer' : 'Klar' : 'Offline') +
+    info.textContent = (account.online ? account.running ? 'Synkroniserer' : account.pending ? 'Afventer start' : 'Klar' : 'Offline') +
       ' · ' + account.folder + (account.count === null ? '' : ' · ' + fmt(account.count) + ' filer / ' + human(account.bytes));
     detail.append(title, info);
     const controls = document.createElement('div'); controls.className = 'account-actions';
-    controls.append(actionButton('Google-login ↗', account.email, 'login'), actionButton('Start backup', account.email, 'start'), actionButton('Gennemgå hele arkivet', account.email, 'rescan'));
-    card.append(detail, controls); list.append(card);
+    const startButton = actionButton(account.running ? 'Synkroniserer…' : account.pending ? 'Starter snart…' : 'Start backup', account.email, 'start');
+    startButton.disabled = account.running || account.pending || !account.online;
+    controls.append(actionButton('Google-login ↗', account.email, 'login'), startButton, actionButton('Gennemgå hele arkivet', account.email, 'rescan'));
+    const feedback = document.createElement('div');
+    feedback.className = 'account-feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    feedback.textContent = account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? '◷ Start er bestilt – venter på synkroniseringsmotoren.' : '';
+    card.append(detail, controls, feedback); list.append(card);
   }
 }
 el('add-account-form').addEventListener('submit', async event => {
