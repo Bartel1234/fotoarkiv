@@ -8,7 +8,7 @@ Dashboardet viser live status, workerens tilgængelighed, antal filer, diskforbr
 
 ## Opdatering fra forrige udgave
 
-Pak filerne oven i den eksisterende projektmappe. Behold din `.env`, `APPDATA_DIR` og `BACKUP_DIR`. Kør derefter `docker compose up -d --build`. Den tidligere konto vises som **Eksisterende konto** og beholder sin profil og sine filer direkte i hovedmappen. Nye konti får mapper navngivet efter mailadressen, eksempelvis `BACKUP_DIR/lars@bartel.dk`. Eksisterende billeder flyttes ikke automatisk. Tilføj ikke den tidligere konto igen med dens mailadresse, medmindre du ønsker en ny, separat download fra begyndelsen.
+Pak filerne oven i den eksisterende projektmappe. Behold din `.env`, `APPDATA_DIR` og `BACKUP_DIR`. Kør derefter `docker compose up -d --build`. Den tidligere konto vises som **Eksisterende konto** og beholder sin profil og sine filer direkte i hovedmappen. Nye konti får mapper navngivet efter mailadressen, eksempelvis `BACKUP_DIR/bruger@example.com`. Eksisterende billeder flyttes ikke automatisk. Tilføj ikke den tidligere konto igen med dens mailadresse, medmindre du ønsker en ny, separat download fra begyndelsen.
 
 ## Installation
 
