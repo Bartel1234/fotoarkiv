@@ -229,8 +229,12 @@ async def account_action(request):
         raise web.HTTPNotFound(text='Ukendt konto')
     if action == 'login':
         (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
-    elif action == 'start':
+    elif action in ('start', 'rescan'):
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+        if action == 'rescan':
+            if (state / 'running').exists():
+                raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
+            (state / 'rescan-request').write_text(str(int(time.time())), encoding='utf-8')
         (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
     else:
         raise web.HTTPNotFound()
@@ -302,6 +306,6 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|start}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|start|rescan}', account_action)
     app.router.add_route('*', '/{tail:.*}', proxy)
     web.run_app(app, host='0.0.0.0', port=8787)
