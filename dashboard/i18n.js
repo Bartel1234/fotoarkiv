@@ -31,6 +31,7 @@ const I18n = (() => {
   apply();
   function phase(account) {
     const stages = {
+      removing: ['Fjerner konto', 'Venter på, at backup og login er stoppet sikkert.'],
       starting: ['Forbereder backup', 'Forbereder kontoens browserprofil.'],
       waiting_login: ['Afslutter login-browser', 'Venter på, at login-browseren frigiver kontoen.'],
       indexing: ['Indekserer billeder og albums', 'Læser billeddatoer og albumtilknytninger fra Google Fotos.'],

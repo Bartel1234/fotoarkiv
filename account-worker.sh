@@ -52,7 +52,12 @@ rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
 if [ ! -f "$NEXT" ]; then echo "$(($(date +%s) + 86400))" > "$NEXT"; fi
 sync_pid=
 cleanup() {
-  if [ -n "$sync_pid" ]; then /bin/kill -TERM -- "-$sync_pid" 2>/dev/null || true; fi
+  if [ -n "$sync_pid" ]; then
+    /bin/kill -TERM -- "-$sync_pid" 2>/dev/null || true
+    sleep 2
+    /bin/kill -KILL -- "-$sync_pid" 2>/dev/null || true
+    wait "$sync_pid" 2>/dev/null || true
+  fi
   rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
   exit 0
 }

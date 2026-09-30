@@ -22,6 +22,7 @@ ACCOUNTS = Path('/accounts')
 ACCOUNT_LIST = CONTROL / 'accounts.txt'
 PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
+REMOVAL_TIMEOUT = 45
 LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
 ASSETS = Path(__file__).parent
 TRANSLATIONS = json.loads((ASSETS / 'translations.json').read_text(encoding='utf-8'))
@@ -156,7 +157,9 @@ def account_summaries():
         stopping = (state / 'stop-request').exists()
         login_active = read('login-active') == email
         phase = progress(state, raw_account_log, online=online, running=running, pending=pending, stopping=stopping, login_active=login_active)
-        result.append({**phase, 'email': email, 'folder': email, 'count': count, 'bytes': size,
+        removing = (state / 'removal-pending').exists()
+        if removing: phase['phase'] = 'removing'
+        result.append({**phase, 'removing': removing, 'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
                        'stopping': (state / 'stop-request').exists(),
@@ -274,12 +277,67 @@ async def start(request):
     raise web.HTTPSeeOther('/')
 
 
+def removal_paths(email):
+    paths = (ACCOUNTS / email, PHOTOS / email, CONTROL / 'accounts' / email)
+    for path in paths:
+        if path.is_symlink() or path.parent.is_symlink() or path.resolve().parent != path.parent.resolve():
+            raise web.HTTPConflict(text='Mappen kan ikke bruges')
+    return paths
+
+async def remove_account(request, email, data):
+    if email == 'legacy' or not EMAIL.fullmatch(email):
+        raise web.HTTPBadRequest(text='Kun konti med egen mailmappe kan fjernes')
+    if data.get('confirmation') != email or data.get('mode') not in ('keep', 'delete'):
+        raise web.HTTPBadRequest(text='Vælg hvad der skal ske med filerne, og bekræft mailadressen')
+    async with request.app['account_lock']:
+        if email not in account_names(): raise web.HTTPNotFound(text='Ukendt konto')
+        profile, photos, state = removal_paths(email)
+        state.mkdir(parents=True, exist_ok=True)
+        for name in ('worker-stopped', 'login-stopped'):
+            (state / name).unlink(missing_ok=True)
+        (state / 'removal-pending').write_text('1')
+        request_login_close(email)
+        for name in ('start-request', 'rescan-request', 'organize-request'):
+            (state / name).unlink(missing_ok=True)
+        try:
+            deadline = time.monotonic() + REMOVAL_TIMEOUT
+            while not ((state / 'worker-stopped').is_file() and (state / 'login-stopped').is_file() and read('login-active') != email):
+                if time.monotonic() >= deadline:
+                    raise web.HTTPConflict(text='Kontoen kunne ikke stoppes sikkert. Ingen filer er slettet. Prøv igen efter genstart af sync og login.')
+                await asyncio.sleep(.5)
+            # No new account operations can start while removal is pending.
+            names = [name for name in account_names() if name != email]
+            tmp = ACCOUNT_LIST.with_suffix('.tmp')
+            tmp.write_text(''.join(name + '\n' for name in names), encoding='utf-8')
+            tmp.replace(ACCOUNT_LIST)
+            index = request.app['archive_index']
+            task = index.tasks.get(email)
+            if task: await asyncio.gather(asyncio.shield(task), return_exceptions=True)
+            def clean():
+                removal_paths(email)
+                if data['mode'] == 'delete' and photos.exists(): shutil.rmtree(photos)
+                if profile.exists(): shutil.rmtree(profile)
+                for path in (CONTROL / 'thumbnails').glob(email + '-*'):
+                    if not re.fullmatch(r'[A-Za-z0-9_-]{20,120}', path.name[len(email)+1:]): continue
+                    if path.is_symlink(): path.unlink()
+                    elif path.is_dir(): shutil.rmtree(path)
+                index.target(email).unlink(missing_ok=True)
+                if state.exists(): shutil.rmtree(state)
+            await asyncio.to_thread(clean)
+            index.states.pop(email, None)
+            _account_cache['at'] = 0; _cache['at'] = 0
+            return web.json_response({'ok': True, 'kept_data': data['mode'] == 'keep', 'folder': str(photos)})
+        finally:
+            (state / 'removal-pending').unlink(missing_ok=True)
+
 async def account_action(request):
     if request.content_type != 'application/json' or (request.content_length or 0) > 4096:
         raise web.HTTPBadRequest(text='Forkert formular')
     try:
         data = await request.json()
     except (ValueError, TypeError):
+        raise web.HTTPBadRequest(text='Ugyldig JSON')
+    if not isinstance(data, dict):
         raise web.HTTPBadRequest(text='Ugyldig JSON')
     if not hmac.compare_digest(str(data.get('token', '')), TOKEN):
         raise web.HTTPForbidden(text='Ugyldig formular')
@@ -305,6 +363,10 @@ async def account_action(request):
     email = request.match_info['email']
     if email != 'legacy' and email not in account_names():
         raise web.HTTPNotFound(text='Ukendt konto')
+    if action == 'remove':
+        return await remove_account(request, email, data)
+    if email != 'legacy' and (CONTROL / 'accounts' / email / 'removal-pending').exists():
+        raise web.HTTPConflict(text='Kontoen er ved at blive fjernet')
     if action == 'login':
         if read('login-active') != email:
             (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
@@ -398,7 +460,7 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js|archive.js|i18n.js|flag-en.svg|flag-da.svg}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)

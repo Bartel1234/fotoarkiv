@@ -123,12 +123,17 @@ function renderAccounts(accounts, summary) {
       window.location.assign('/archive/' + encodeURIComponent(account.email));
     });
     controls.append(browse);
+    if(account.email !== 'legacy') {
+      const remove=document.createElement('button');remove.type='button';remove.className='outline danger';remove.textContent=I18n.t('Fjern konto');
+      remove.addEventListener('click',event=>{event.stopPropagation();openRemoval(account);});controls.append(remove);
+    }
     if (account.running || account.pending || account.stopping) {
       const stop=actionButton(account.stopping ? I18n.t('Afbryder…') : I18n.t('Afbryd backup'), account.email, 'stop');
       stop.classList.add('danger'); stop.disabled=account.stopping;
       controls.append(stop);
     }
     if (account.login_active) controls.append(actionButton(I18n.t('Afslut login'), account.email, 'close-login'));
+    if(account.removing) controls.querySelectorAll('button').forEach(button=>{button.disabled=true;});
     const feedback = document.createElement('div');
     feedback.className = 'account-feedback';
     feedback.setAttribute('role', 'status');
@@ -158,3 +163,38 @@ refresh();
 setInterval(refresh, 8000);
 
 window.addEventListener("languagechange", refresh);
+
+let removalAccount=null, removalStep=1, removalBusy=false;
+const removalMode=()=>document.querySelector('input[name=remove-mode]:checked').value;
+function removalWarning() {return I18n.t(removalMode()==='keep' ? 'Backupfilerne bevares i kontoens mappe. Loginprofilen og kørselsplanen fjernes.' : 'Alle lokale billeder, videoer og metadata i kontoens backupmappe slettes. Det kan ikke fortrydes.');}
+function renderRemoval() {
+  el('remove-step-label').textContent=I18n.t('Trin ')+removalStep+I18n.t(' af 3');
+  document.querySelectorAll('[data-remove-step]').forEach(section=>{section.hidden=Number(section.dataset.removeStep)!==removalStep;});
+  el('remove-back').hidden=removalStep===1;el('remove-next').hidden=removalStep===3;el('remove-submit').hidden=removalStep!==3;
+  el('remove-review').textContent=removalWarning();el('remove-final-warning').textContent=removalWarning();
+  el('remove-submit').disabled=removalBusy || !el('remove-acknowledge').checked || el('remove-confirm-email').value!==removalAccount.email;
+}
+function openRemoval(account) {
+  removalAccount=account;removalStep=1;removalBusy=false;
+  document.querySelector('input[name=remove-mode][value=keep]').checked=true;
+  el('remove-account-name').textContent=account.email;el('remove-confirm-email').value='';el('remove-acknowledge').checked=false;el('remove-message').textContent='';
+  el('remove-account-dialog').querySelectorAll('button,input').forEach(node=>{node.disabled=false;});
+  renderRemoval();el('remove-account-dialog').showModal();
+}
+el('remove-cancel').addEventListener('click',()=>{if(!removalBusy)el('remove-account-dialog').close();});
+el('remove-account-dialog').addEventListener('cancel',event=>{if(removalBusy)event.preventDefault();});
+el('remove-next').addEventListener('click',()=>{removalStep=Math.min(3,removalStep+1);renderRemoval();if(removalStep===3)el('remove-confirm-email').focus();});
+el('remove-back').addEventListener('click',()=>{removalStep=Math.max(1,removalStep-1);renderRemoval();});
+el('remove-confirm-email').addEventListener('input',renderRemoval);el('remove-acknowledge').addEventListener('change',renderRemoval);
+window.addEventListener('languagechange',()=>{if(removalAccount && el('remove-account-dialog').open)renderRemoval();});
+el('remove-submit').addEventListener('click',async()=>{
+  if(removalBusy || el('remove-confirm-email').value!==removalAccount.email || !el('remove-acknowledge').checked)return;
+  removalBusy=true;el('remove-account-dialog').querySelectorAll('button,input').forEach(node=>{node.disabled=true;});
+  el('remove-message').textContent=I18n.t('Fjerner konto – stopper backup og login…');
+  try {
+    const result=await postAccount('/api/accounts/'+encodeURIComponent(removalAccount.email)+'/remove',{mode:removalMode(),confirmation:el('remove-confirm-email').value});
+    if(selectedAccount===removalAccount.email)selectedAccount=null;
+    el('remove-account-dialog').close();el('account-message').textContent=I18n.t(result.kept_data ? 'Kontoen er fjernet. Backupfilerne er bevaret.' : 'Kontoen er fjernet, og dens lokale backupfiler er slettet.');await refresh();
+  } catch(error) {el('remove-message').textContent=error.message;}
+  finally {removalBusy=false;el('remove-account-dialog').querySelectorAll('button,input').forEach(node=>{node.disabled=false;});renderRemoval();}
+});

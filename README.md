@@ -38,6 +38,15 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 
 The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. Fotoarkiv does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
 
+## Remove an account
+
+Select **Remove account** on an email account card. A three-step dialog asks you to choose what happens to its backup files, review the consequences, and type the exact email address plus acknowledge the removal.
+
+- **Keep backup files on the server** leaves the entire account backup folder in place. The Google sign-in profile, schedule and portal cache are removed. The files remain accessible through the Unraid share, but the account is no longer listed in the portal.
+- **Delete all backup files for this account** removes that account's backup folder, including photos, videos, album references and metadata, as well as its sign-in profile and schedule. This cannot be undone through the portal.
+
+Removal pauses new operations and waits for explicit confirmation that the sync worker and sign-in browser have stopped. Other accounts continue running. If safe shutdown cannot be confirmed, no files are deleted. Nothing is removed from Google Photos. The original **Existing account**, which shares the main backup directory, cannot be removed through this dialog.
+
 ## Scan an incomplete archive
 
 Select **Scan the entire archive** for an account when the local file count is much lower than in Google Photos. The previous position is saved as `APPDATA_DIR/control/accounts/<email>/lastdone-before-rescan` (under `APPDATA_DIR/control` for the original account), and scanning restarts from the oldest part of the timeline.

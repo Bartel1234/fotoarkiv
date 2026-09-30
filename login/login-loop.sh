@@ -7,10 +7,20 @@ cleanup() {
   fi
   rm -f /control/login-active /control/login-heartbeat
 }
+ack_removals() {
+  for marker in /control/accounts/*/removal-pending; do
+    [ -f "$marker" ] || continue
+    removal_state=${marker%/removal-pending}
+    removal_account=${removal_state##*/}
+    if [ -n "$browser_pid" ] && [ "${account:-}" = "$removal_account" ]; then continue; fi
+    echo stopped > "$removal_state/login-stopped"
+  done
+}
 trap 'cleanup; exit 0' TERM INT
 trap cleanup EXIT
 rm -f /control/login-active /control/login-close-request
 while :; do
+  ack_removals
   date +%s > /control/login-heartbeat
   if [ -f /control/login-request ]; then
     request=$(cat /control/login-request 2>/dev/null || true)
@@ -21,13 +31,14 @@ while :; do
       *[!a-z0-9@._+-]*|'') profile='' ;;
       *) profile="/accounts/$account/gphotos-cdp" ;;
     esac
+    if [ "$account" != legacy ] && { ! grep -Fxq -- "$account" /control/accounts.txt 2>/dev/null || [ -f "/control/accounts/$account/removal-pending" ]; }; then profile=''; fi
     if [ -n "$profile" ]; then
       state=/control
       if [ "$account" != legacy ]; then state="/control/accounts/$account"; fi
       cancelled=false
       while [ -f "$state/running" ]; do
         date +%s > /control/login-heartbeat
-        if [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
+        if [ -f "$state/removal-pending" ] || [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
           rm -f /control/login-close-request
           cancelled=true
           break
@@ -35,6 +46,7 @@ while :; do
         sleep 2
       done
       if [ "$cancelled" = true ]; then continue; fi
+      if [ "$account" != legacy ] && [ -f "$state/removal-pending" ]; then continue; fi
       mkdir -p "$profile"
       echo "$account" > /control/login-active
       rm -f "$profile/SingletonLock" "$profile/SingletonCookie" "$profile/SingletonSocket"
@@ -43,6 +55,7 @@ while :; do
       browser_pid=$!
       closing=false
       while kill -0 "$browser_pid" 2>/dev/null; do
+        ack_removals
         date +%s > /control/login-heartbeat
         # Repeated clicks must not queue a second browser for the same account.
         if [ -f /control/login-request ]; then
@@ -54,7 +67,7 @@ while :; do
             closing=true
           fi
         fi
-        if [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
+        if [ -f "$state/removal-pending" ] || [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
           rm -f /control/login-close-request
           if [ "$closing" = false ]; then
             echo "$(date '+%Y-%m-%d %H:%M:%S') Afslutter login via portalen: $account" >> /control/login-browser.log
