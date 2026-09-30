@@ -38,3 +38,15 @@
 
 .account-card > .archive-panel { flex-basis:100%; width:100%; min-width:0; margin:10px 0 0; }
 .archive-panel[hidden] { display:none; }
+
+/* Default outline controls sit on light panels; the hero uses a dark surface. */
+.outline { background:#ede9fe; color:#4933a6; border-color:#b9acf0; }
+.outline:hover { background:#ddd6fe; color:#352078; }
+.outline:disabled { background:#e8e6ef; color:#655f78; border-color:#cbc6d7; opacity:1; cursor:default; }
+.hero .outline { background:transparent; color:#e3ecfb; border-color:#6e83a3; }
+.hero .outline:hover { background:#ffffff18; }
+.outline.danger { background:#fee2e2; color:#991b1b; border-color:#f3aaaa; }
+.outline.danger:hover { background:#fecaca; }
+button:focus-visible,a:focus-visible { outline:3px solid #9479ee; outline-offset:3px; }
+
+button[hidden] { display:none; }

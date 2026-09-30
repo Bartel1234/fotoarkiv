@@ -10,15 +10,15 @@ async function refresh() {
     const active = (s.accounts || []).find(a => a.email === selectedAccount) || (s.accounts || [])[0];
     if (active) selectedAccount = active.email;
     const view = active || s;
-    const label = active ? active.running ? 'Synkroniserer ' + active.email : !active.online ? 'Konto offline: ' + active.email : active.pending ? 'Starter ' + active.email : active.last_exit && active.last_exit !== '0' ? 'Backup fejlede: ' + active.email : 'Klar: ' + active.email : s.label;
-    const tone = active ? !active.online || (active.last_exit && active.last_exit !== '0' && !active.running) ? 'error' : active.running ? 'active' : 'pending' : s.tone;
+    const label = active ? active.running ? 'Synkroniserer ' + active.email : !active.online ? 'Konto offline: ' + active.email : active.pending ? 'Starter ' + active.email : active.last_exit === '130' ? 'Backup afbrudt: ' + active.email : active.last_exit && active.last_exit !== '0' ? 'Backup fejlede: ' + active.email : 'Klar: ' + active.email : s.label;
+    const tone = active ? !active.online || (active.last_exit && active.last_exit !== '0' && active.last_exit !== '130' && !active.running) ? 'error' : active.running ? 'active' : 'pending' : s.tone;
     el('status').textContent = label;
     el('status').dataset.tone = tone;
     el('status-detail').textContent = view.running ? 'Backup kører. Nye filer vises herunder, mens de hentes.' : view.pending ? 'Anmodningen er sendt. Synkroniseringen starter om lidt.' : tone === 'error' ? 'Se aktivitetsloggen for fejlen og kontrollér Google-login.' : 'Dine billeder bliver gemt lokalt på din Unraid-server.';
     el('count').textContent = fmt(s.count);
     el('used').textContent = human(s.bytes);
     el('last-run').textContent = view.last_run;
-    el('last-result').textContent = view.last_exit === '0' ? 'Kørsel afsluttet · kontrollér antal filer' : view.last_exit ? 'Fejlede · exitkode ' + view.last_exit : 'Afventer første backup';
+    el('last-result').textContent = view.last_exit === '130' ? 'Afbrudt af brugeren' : view.last_exit === '0' ? 'Kørsel afsluttet · kontrollér antal filer' : view.last_exit ? 'Fejlede · exitkode ' + view.last_exit : 'Afventer første backup';
     el('next-run').textContent = view.next_run;
     el('activity-badge').textContent = view.running ? '● KØRER' : view.online ? '● LIVE' : '● OFFLINE';
     el('activity-badge').className = 'badge ' + tone;
@@ -63,10 +63,10 @@ function actionButton(label, account, action) {
     selectedAccount = account;
     if (action === 'rescan' && !window.confirm('Start en fuld gennemgang fra de ældste billeder? De eksisterende filer bevares, men nogle kan blive hentet igen.')) return;
     const feedback = button.closest('.account-card')?.querySelector('.account-feedback');
-    if (action === 'start' || action === 'rescan' || action === 'close-login') {
+    if (action === 'start' || action === 'rescan' || action === 'close-login' || action === 'stop') {
       button.disabled = true;
       button.textContent = 'Sender anmodning…';
-      if (feedback) feedback.textContent = 'Sender startanmodning…';
+      if (feedback) feedback.textContent = action === 'stop' ? 'Sender anmodning om at afbryde…' : 'Sender anmodning…';
     }
     let popup;
     if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
@@ -74,13 +74,13 @@ function actionButton(label, account, action) {
       await postAccount('/api/accounts/' + encodeURIComponent(account) + '/' + action, {});
       if (popup) popup.focus();
       if (action === 'login' && !popup) window.location.href = '/login/';
-      if (action === 'start' || action === 'rescan' || action === 'close-login') {
-        if (feedback) feedback.textContent = action === 'close-login' ? 'Afslutter login-browseren…' : 'Start er bestilt. Login-browseren lukkes automatisk.';
+      if (action === 'start' || action === 'rescan' || action === 'close-login' || action === 'stop') {
+        if (feedback) feedback.textContent = action === 'stop' ? 'Afbryder backup…' : action === 'close-login' ? 'Afslutter login-browseren…' : 'Start er bestilt. Login-browseren lukkes automatisk.';
         await refresh();
       }
     } catch (error) {
       if (popup) popup.close();
-      if (feedback) feedback.textContent = 'Kunne ikke starte: ' + error.message;
+      if (feedback) feedback.textContent = 'Anmodningen mislykkedes: ' + error.message;
       button.disabled = false;
       button.textContent = label;
       el('account-message').textContent = error.message;
@@ -92,7 +92,7 @@ function renderAccounts(accounts, summary) {
   const list = el('account-list');
   list.replaceChildren();
   const legacy = {email: 'legacy', folder: 'Hovedmappen (eksisterende konto)', count: null, bytes: null,
-                  online: summary.online, running: summary.running, pending: summary.pending, login_active: summary.login_active, last_run: summary.last_run};
+                  online: summary.online, running: summary.running, pending: summary.pending, stopping: summary.stopping, login_active: summary.login_active, last_run: summary.last_run};
   for (const account of [legacy, ...accounts]) {
     const card = document.createElement('div'); card.className = 'account-card';
     if (account.email === selectedAccount) card.style.borderColor = '#8370f5';
@@ -117,12 +117,17 @@ function renderAccounts(accounts, summary) {
       window.location.assign('/archive/' + encodeURIComponent(account.email));
     });
     controls.append(browse);
+    if (account.running || account.pending || account.stopping) {
+      const stop=actionButton(account.stopping ? 'Afbryder…' : 'Afbryd backup', account.email, 'stop');
+      stop.classList.add('danger'); stop.disabled=account.stopping;
+      controls.append(stop);
+    }
     if (account.login_active) controls.append(actionButton('Afslut login', account.email, 'close-login'));
     const feedback = document.createElement('div');
     feedback.className = 'account-feedback';
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
-    feedback.textContent = account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? account.login_active ? '◷ Afslutter login-browseren før backup…' : '◷ Start er bestilt – venter på synkroniseringsmotoren.' : account.login_active ? 'Login-browseren er åben. Start backup lukker den automatisk.' : '';
+    feedback.textContent = account.stopping ? '◷ Afbryder backup – venter på at processerne lukker.' : account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? account.login_active ? '◷ Afslutter login-browseren før backup…' : '◷ Start er bestilt – venter på synkroniseringsmotoren.' : account.login_active ? 'Login-browseren er åben. Start backup lukker den automatisk.' : '';
     card.append(detail, controls, feedback);
     list.append(card);
   }

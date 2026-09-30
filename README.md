@@ -102,3 +102,7 @@ docker compose up -d --no-deps --force-recreate sync login dashboard
 ```
 
 Efter opdatering: genindlæs portalen og åbn kontoens billedside. Vælg **Opdater albums og organiser filer**, eller start backup. Første organisering kan tage tid, især hvis hardlinks ikke er mulige. Login kræves kun igen, hvis den gemte Google-session er udløbet.
+
+## Afbryd en kørsel
+
+**Afbryd backup** vises ved kontoen og på dens billedside, når en kørsel er aktiv eller bestilt. Stopanmodningen gælder kun den valgte konto og afslutter dens procesgruppe; andre konti fortsætter. Portalen viser **Afbryder…**, indtil processen er lukket. Status bliver **Afbrudt af brugeren** (exitkode 130). Hentede filer og downloadposition bevares; en delvis download kan blive hentet igen ved næste start. Den daglige kørselsplan fortsætter. En igangværende organisering kan også afbrydes og genoptages.

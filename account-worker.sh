@@ -29,28 +29,54 @@ run_sync() {
   fi
   return "$download_result"
 }
+if [ "${2:-}" = --run ]; then
+  organize_only=${3:-0}
+  run_sync
+  exit $?
+fi
 mkdir -p "$state" "$destination" "$profile_tmp/gphotos-cdp"
 NEXT="$state/next-run"
 REQUEST="$state/start-request"
 RUNNING="$state/running"
 LOG="$state/activity.log"
+# A restarted account worker owns no job yet.
+rm -f "$RUNNING"
 if [ ! -f "$NEXT" ]; then echo "$(($(date +%s) + 86400))" > "$NEXT"; fi
-trap 'exit 0' TERM INT
+sync_pid=
+cleanup() {
+  if [ -n "$sync_pid" ]; then /bin/kill -TERM -- "-$sync_pid" 2>/dev/null || true; fi
+  rm -f "$RUNNING"
+  exit 0
+}
+trap cleanup TERM INT
 echo "$(date '+%Y-%m-%d %H:%M:%S') Worker klar: $account" >> "$LOG"
 while :; do
   NOW=$(date +%s)
   echo "$NOW" > "$state/heartbeat"
   DUE=$(cat "$NEXT" 2>/dev/null || echo 0)
   case "$DUE" in *[!0-9]*|'') DUE=0;; esac
+  if [ -f "$state/stop-request" ] && [ ! -f "$RUNNING" ]; then
+    rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request"
+    echo 130 > "$state/last-exit"
+    echo "$(($(date +%s) + 86400))" > "$NEXT"
+  fi
   if [ -f "$REQUEST" ] || [ "$NOW" -ge "$DUE" ]; then
     organize_only=0
     if [ -f "$state/organize-request" ]; then organize_only=1; rm -f "$state/organize-request"; fi
-    rm -f "$REQUEST"
     while [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
       echo "$(date '+%Y-%m-%d %H:%M:%S') Venter på at login-browseren lukkes: $account" >> "$LOG"
       date +%s > "$state/heartbeat"
-      sleep 10
+      if [ -f "$state/stop-request" ]; then break; fi
+      sleep 2
     done
+    if [ -f "$state/stop-request" ]; then
+      rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request"
+      echo "130" > "$state/last-exit"
+      echo "$(date '+%Y-%m-%d %H:%M:%S') Backup afbrudt før start: $account" >> "$LOG"
+      echo "$(($(date +%s) + 86400))" > "$NEXT"
+      continue
+    fi
+    rm -f "$REQUEST"
     # Chrome leaves these symlinks behind if a container is restarted mid-download.
     # No login browser may be active for this account at this point.
     rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
@@ -71,14 +97,30 @@ while :; do
     fi
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
-    run_sync >> "$LOG" 2>&1 &
+    setsid /bin/sh "$0" "$account" --run "$organize_only" >> "$LOG" 2>&1 &
     sync_pid=$!
+    stopped=0
     while kill -0 "$sync_pid" 2>/dev/null; do
       date +%s > "$state/heartbeat"
-      sleep 10
+      if [ -f "$state/stop-request" ]; then
+        stopped=1
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Afbryder backup: $account" >> "$LOG"
+        /bin/kill -TERM -- "-$sync_pid" 2>/dev/null || true
+        for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+          /bin/kill -0 -- "-$sync_pid" 2>/dev/null || break
+          date +%s > "$state/heartbeat"
+          sleep 1
+        done
+        /bin/kill -KILL -- "-$sync_pid" 2>/dev/null || true
+        break
+      fi
+      sleep 2
     done
     wait "$sync_pid"
     result=$?
+    sync_pid=
+    if [ "$stopped" = 1 ] || [ -f "$state/stop-request" ]; then result=130; fi
+    rm -f "$state/stop-request"
     echo "$result" > "$state/last-exit"
     date '+%Y-%m-%d %H:%M:%S' > "$state/last-run"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Færdig, exitkode $result" >> "$LOG"

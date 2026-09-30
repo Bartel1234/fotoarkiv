@@ -133,6 +133,7 @@ def account_summaries():
         result.append({'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
+                       'stopping': (state / 'stop-request').exists(),
                        'login_active': read('login-active') == email,
                        'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit'),
                        'next_run': account_next_run, 'log': account_log or 'Der er endnu ingen aktivitet for denne konto.'})
@@ -162,6 +163,8 @@ def status():
         label, tone = 'Synkroniserer nu', 'active'
     elif pending:
         label, tone = 'Starter snart', 'pending'
+    elif exit_code == '130':
+        label, tone = 'Backup afbrudt af brugeren', 'pending'
     elif exit_code and exit_code != '0':
         label, tone = 'Kræver opmærksomhed', 'error'
     elif exit_code == '0':
@@ -169,7 +172,7 @@ def status():
     else:
         label, tone = 'Klar til første kørsel', 'pending'
     return {**inventory(), 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
-            'running': running, 'pending': pending, 'login_active': read('login-active') == 'legacy', 'last_run': read('last-run') or 'Ingen endnu',
+            'running': running, 'pending': pending, 'stopping': (CONTROL / 'stop-request').exists(), 'login_active': read('login-active') == 'legacy', 'last_run': read('last-run') or 'Ingen endnu',
             'next_run': next_run, 'last_exit': exit_code, 'started': read('running') if running else '',
             'log': log or 'Der er endnu ingen aktivitet.'}
 
@@ -270,6 +273,11 @@ async def account_action(request):
             (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
     elif action == 'close-login':
         request_login_close(email)
+    elif action == 'stop':
+        state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+        (state / 'stop-request').write_text(str(int(time.time())), encoding='utf-8')
+        for name in ('start-request', 'rescan-request', 'organize-request'):
+            (state / name).unlink(missing_ok=True)
     elif action in ('start', 'rescan', 'organize'):
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
         if action == 'organize':
@@ -353,7 +361,7 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)

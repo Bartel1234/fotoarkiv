@@ -132,3 +132,32 @@ archiveEl('archive-organize').addEventListener('click',async()=>{
   } catch(e) {archiveEl('organization-status').textContent=e.message;}
   finally {button.disabled=false;}
 });
+
+async function archiveRunStatus() {
+  try {
+    const response=await fetch('/api/status',{cache:'no-store'});
+    if(!response.ok) return;
+    const data=await response.json();
+    const account=archiveState.account==='legacy' ? data : (data.accounts||[]).find(a=>a.email===archiveState.account);
+    if(!account) return;
+    const busy=account.running||account.pending||account.stopping;
+    archiveEl('archive-stop').hidden=!busy;
+    archiveEl('archive-stop').disabled=!!account.stopping;
+    archiveEl('archive-stop').textContent=account.stopping?'Afbryder…':'Afbryd backup';
+    archiveEl('archive-organize').disabled=!!busy||!account.online;
+    if(busy) archiveEl('organization-status').textContent=account.stopping?'Afbryder backup…':account.running?'Kontoens backup eller organisering kører.':'Kontoens kørsel afventer start.';
+  } catch (_) {}
+}
+archiveEl('archive-stop').addEventListener('click',async()=>{
+  const button=archiveEl('archive-stop');button.disabled=true;
+  try {
+    const response=await fetch('/api/accounts/'+encodeURIComponent(archiveState.account)+'/stop',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:archiveEl('archive-token').value})});
+    if(!response.ok) throw Error(await response.text());
+    archiveEl('organization-status').textContent='Afbryder backup…';
+    await archiveRunStatus();
+  } catch(e) {archiveEl('organization-status').textContent=e.message;button.disabled=false;}
+});
+archiveRunStatus();
+setInterval(archiveRunStatus,8000);
