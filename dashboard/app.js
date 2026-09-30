@@ -63,7 +63,7 @@ function actionButton(label, account, action) {
     selectedAccount = account;
     if (action === 'rescan' && !window.confirm('Start en fuld gennemgang fra de ældste billeder? De eksisterende filer bevares, men nogle kan blive hentet igen.')) return;
     const feedback = button.closest('.account-card')?.querySelector('.account-feedback');
-    if (action === 'start' || action === 'rescan') {
+    if (action === 'start' || action === 'rescan' || action === 'close-login') {
       button.disabled = true;
       button.textContent = 'Sender anmodning…';
       if (feedback) feedback.textContent = 'Sender startanmodning…';
@@ -74,8 +74,8 @@ function actionButton(label, account, action) {
       await postAccount('/api/accounts/' + encodeURIComponent(account) + '/' + action, {});
       if (popup) popup.focus();
       if (action === 'login' && !popup) window.location.href = '/login/';
-      if (action === 'start' || action === 'rescan') {
-        if (feedback) feedback.textContent = 'Start er bestilt. Venter på synkroniseringsmotoren…';
+      if (action === 'start' || action === 'rescan' || action === 'close-login') {
+        if (feedback) feedback.textContent = action === 'close-login' ? 'Afslutter login-browseren…' : 'Start er bestilt. Login-browseren lukkes automatisk.';
         await refresh();
       }
     } catch (error) {
@@ -94,7 +94,7 @@ function renderAccounts(accounts, summary) {
   if (archive && list.contains(archive)) archive.remove();
   list.replaceChildren();
   const legacy = {email: 'legacy', folder: 'Hovedmappen (eksisterende konto)', count: null, bytes: null,
-                  online: summary.online, running: summary.running, pending: summary.pending, last_run: summary.last_run};
+                  online: summary.online, running: summary.running, pending: summary.pending, login_active: summary.login_active, last_run: summary.last_run};
   for (const account of [legacy, ...accounts]) {
     const card = document.createElement('div'); card.className = 'account-card';
     if (account.email === selectedAccount) card.style.borderColor = '#8370f5';
@@ -119,11 +119,12 @@ function renderAccounts(accounts, summary) {
       window.openAccountArchive(account.email, card);
     });
     controls.append(browse);
+    if (account.login_active) controls.append(actionButton('Afslut login', account.email, 'close-login'));
     const feedback = document.createElement('div');
     feedback.className = 'account-feedback';
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
-    feedback.textContent = account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? '◷ Start er bestilt – venter på synkroniseringsmotoren.' : '';
+    feedback.textContent = account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? account.login_active ? '◷ Afslutter login-browseren før backup…' : '◷ Start er bestilt – venter på synkroniseringsmotoren.' : account.login_active ? 'Login-browseren er åben. Start backup lukker den automatisk.' : '';
     card.append(detail, controls, feedback);
     if (archive && window.archiveAccount === account.email) card.append(archive);
     list.append(card);
