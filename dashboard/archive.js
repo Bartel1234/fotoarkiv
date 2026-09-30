@@ -1,15 +1,15 @@
 const archiveEl = id => document.getElementById(id);
 const archiveState = {account: '', page: 1, total: 0, selected: new Map(), items: []};
-const archiveFormat = n => new Intl.NumberFormat('da-DK').format(n);
-const archiveSize = n => n >= 1024 ** 3 ? (n / 1024 ** 3).toLocaleString('da-DK', {maximumFractionDigits: 1}) + ' GB' : (n / 1024 ** 2).toLocaleString('da-DK', {maximumFractionDigits: 1}) + ' MB';
+const archiveFormat = n => new Intl.NumberFormat(I18n.locale()).format(n);
+const archiveSize = n => n >= 1024 ** 3 ? (n / 1024 ** 3).toLocaleString(I18n.locale(), {maximumFractionDigits: 1}) + ' GB' : (n / 1024 ** 2).toLocaleString(I18n.locale(), {maximumFractionDigits: 1}) + ' MB';
 const archiveKey = item => item.id + '/' + item.name;
 
 function archiveSelection() {
   const list = [...archiveState.selected.values()];
   const bytes = list.reduce((sum, item) => sum + item.size, 0);
-  archiveEl('archive-selection').textContent = list.length + ' valgt · ' + archiveSize(bytes);
+  archiveEl('archive-selection').textContent = list.length + I18n.t(' valgt · ') + archiveSize(bytes);
   archiveEl('archive-zip').disabled = !list.length || list.length > 500 || bytes > 10 * 1024 ** 3;
-  archiveEl('archive-message').textContent = list.length > 500 || bytes > 10 * 1024 ** 3 ? 'Vælg højst 500 filer og 10 GB ad gangen.' : '';
+  archiveEl('archive-message').textContent = list.length > 500 || bytes > 10 * 1024 ** 3 ? I18n.t('Vælg højst 500 filer og 10 GB ad gangen.') : '';
 }
 
 function archivePreview(item) {
@@ -31,7 +31,7 @@ function archiveRender() {
   const grid = archiveEl('archive-grid');
   grid.replaceChildren();
   if (!archiveState.items.length) {
-    grid.textContent = 'Ingen filer på denne side.';
+    grid.textContent = I18n.t('Ingen filer på denne side.');
   }
   for (const item of archiveState.items) {
     const card = document.createElement('div'); card.className = 'archive-card';
@@ -44,7 +44,7 @@ function archiveRender() {
     }
     preview.addEventListener('click', () => archivePreview(item));
     const name = document.createElement('strong'); name.textContent = item.name; name.title = item.name;
-    const meta = document.createElement('small'); meta.textContent = archiveSize(item.size) + ' · ' + (item.date_source === 'google' ? 'Google-dato ' : 'hentet ') + item.modified;
+    const meta = document.createElement('small'); meta.textContent = archiveSize(item.size) + ' · ' + (item.date_source === 'google' ? I18n.t('Google-dato ') : I18n.t('hentet ')) + item.modified;
     const label = document.createElement('label'); label.className = 'archive-check';
     const check = document.createElement('input'); check.type = 'checkbox'; check.checked = archiveState.selected.has(archiveKey(item));
     check.addEventListener('change', () => {
@@ -52,11 +52,11 @@ function archiveRender() {
       else archiveState.selected.delete(archiveKey(item));
       archiveSelection();
     });
-    label.append(check, document.createTextNode(' Vælg'));
+    label.append(check, document.createTextNode(I18n.t(' Vælg')));
     card.append(preview, name, meta, label); grid.append(card);
   }
-  archiveEl('archive-total').textContent = archiveFormat(archiveState.total) + ' filer';
-  archiveEl('archive-page').textContent = 'Side ' + archiveState.page + ' af ' + Math.max(1, Math.ceil(archiveState.total / 48));
+  archiveEl('archive-total').textContent = archiveFormat(archiveState.total) + I18n.t(' filer');
+  archiveEl('archive-page').textContent = I18n.t('Side ') + archiveState.page + I18n.t(' af ') + Math.max(1, Math.ceil(archiveState.total / 48));
   archiveEl('archive-prev').disabled = archiveState.page <= 1;
   archiveEl('archive-next').disabled = archiveState.page * 48 >= archiveState.total;
   archiveSelection();
@@ -70,7 +70,7 @@ async function archiveLoad() {
   archiveRequest=new AbortController();
   const requestNumber=++archiveRequestNumber;
   const signal=archiveRequest.signal;
-  archiveEl('archive-grid').textContent = 'Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.';
+  archiveEl('archive-grid').textContent = I18n.t('Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.');
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
       q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value});
@@ -80,17 +80,17 @@ async function archiveLoad() {
     if(requestNumber!==archiveRequestNumber) return;
     const albumSelect=archiveEl('archive-album');
     const chosen=albumSelect.value;
-    albumSelect.replaceChildren(new Option('Alle billeder og videoer',''), new Option('Uden album','__none__'));
+    albumSelect.replaceChildren(new Option(I18n.t('Alle billeder og videoer'),''), new Option(I18n.t('Uden album'),'__none__'));
     for(const album of data.albums || []) albumSelect.append(new Option(album.title+' ('+album.count+')',album.id));
     albumSelect.value=chosen;
     const org=data.organization;
-    archiveEl('organization-status').textContent=org ? 'Senest organiseret: '+org.updated+(org.missing_metadata ? ' · '+org.missing_metadata+' filer uden Google-metadata' : '')+(org.copies ? ' · '+org.copies+' albumkopier (hardlink ikke muligt)' : '') : 'Filerne er endnu ikke organiseret.';
+    archiveEl('organization-status').textContent=org ? I18n.t('Senest organiseret: ')+org.updated+(org.missing_metadata ? ' · '+org.missing_metadata+I18n.t(' filer uden Google-metadata') : '')+(org.copies ? ' · '+org.copies+I18n.t(' albumkopier (hardlink ikke muligt)') : '') : I18n.t('Filerne er endnu ikke organiseret.');
     archiveState.items = data.items;
     archiveState.total = data.total;
     archiveRender();
   } catch (error) {
     if(error.name==='AbortError' || requestNumber!==archiveRequestNumber) return;
-    archiveEl('archive-grid').textContent = 'Kunne ikke hente filer.';
+    archiveEl('archive-grid').textContent = I18n.t('Kunne ikke hente filer.');
     archiveEl('archive-message').textContent = error.message;
   }
 }
@@ -136,7 +136,7 @@ archiveEl('archive-organize').addEventListener('click',async()=>{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token:archiveEl('archive-token').value})});
     if(!response.ok) throw Error(await response.text());
-    archiveEl('organization-status').textContent='Organisering bestilt. Følg fremdriften i kontoens aktivitetslog.';
+    archiveEl('organization-status').textContent=I18n.t('Organisering bestilt. Følg fremdriften i kontoens aktivitetslog.');
   } catch(e) {archiveEl('organization-status').textContent=e.message;}
   finally {button.disabled=false;}
 });
@@ -151,9 +151,9 @@ async function archiveRunStatus() {
     const busy=account.running||account.pending||account.stopping;
     archiveEl('archive-stop').hidden=!busy;
     archiveEl('archive-stop').disabled=!!account.stopping;
-    archiveEl('archive-stop').textContent=account.stopping?'Afbryder…':'Afbryd backup';
+    archiveEl('archive-stop').textContent=account.stopping?I18n.t('Afbryder…'):I18n.t('Afbryd backup');
     archiveEl('archive-organize').disabled=!!busy||!account.online;
-    if(busy) archiveEl('organization-status').textContent=account.stopping?'Afbryder backup…':account.running?'Kontoens backup eller organisering kører.':'Kontoens kørsel afventer start.';
+    if(busy) archiveEl('organization-status').textContent=account.stopping?I18n.t('Afbryder backup…'):account.running?I18n.t('Kontoens backup eller organisering kører.'):I18n.t('Kontoens kørsel afventer start.');
   } catch (_) {}
 }
 archiveEl('archive-stop').addEventListener('click',async()=>{
@@ -163,9 +163,11 @@ archiveEl('archive-stop').addEventListener('click',async()=>{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token:archiveEl('archive-token').value})});
     if(!response.ok) throw Error(await response.text());
-    archiveEl('organization-status').textContent='Afbryder backup…';
+    archiveEl('organization-status').textContent=I18n.t('Afbryder backup…');
     await archiveRunStatus();
   } catch(e) {archiveEl('organization-status').textContent=e.message;button.disabled=false;}
 });
 archiveRunStatus();
 setInterval(archiveRunStatus,8000);
+
+window.addEventListener("languagechange", () => { archiveLoad(); archiveRunStatus(); });

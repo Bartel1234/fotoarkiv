@@ -1,88 +1,83 @@
-# Fotoarkiv Backup til Unraid
+# Fotoarkiv Backup for Unraid
 
-> Status: Projektet er testet lokalt for webinterface og styring. En fuld download fra Google Fotos er endnu ikke verificeret på en Unraid-server med en rigtig konto.
+A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
-Et lokalt webinterface til automatisk download fra Google Fotos. Synkroniseringen bruger [gphotos-cdp](https://github.com/perkeep/gphotos-cdp) via [Jake Whartons Docker-image](https://github.com/JakeWharton/docker-gphotos-sync). Det styrer Google Fotos i Chromium, gemmer den sidst hentede post og fortsætter inkrementelt. Ingen Google Takeout er nødvendig. Flere konti kan tilføjes i portalen. Hver konto får sin egen browserprofil, downloadposition og undermappe under `BACKUP_DIR`.
+Fotoarkiv uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
 
-Dashboardet viser live status, workerens tilgængelighed, antal filer, diskforbrug, seneste filer, næste kørsel og log. Det opdateres automatisk hvert 8. sekund.
-
-## Opdatering fra forrige udgave
-
-Pak filerne oven i den eksisterende projektmappe. Behold din `.env`, `APPDATA_DIR` og `BACKUP_DIR`. Kør derefter `docker compose up -d --build`. Den tidligere konto vises som **Eksisterende konto** og beholder sin profil og sine filer direkte i hovedmappen. Nye konti får mapper navngivet efter mailadressen, eksempelvis `BACKUP_DIR/bruger@example.com`. Eksisterende billeder flyttes ikke automatisk. Tilføj ikke den tidligere konto igen med dens mailadresse, medmindre du ønsker en ny, separat download fra begyndelsen.
+> Validation: the dashboard, account controls, file organization and media APIs have been tested locally. A complete Google Photos download has not been independently verified against a real account on Unraid. Check the resulting files and counts before treating the archive as complete.
 
 ## Installation
 
-Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke allerede virker i terminalen.
+Install a Docker Compose plugin on Unraid if `docker compose version` does not work.
 
-1. Pak projektet ud på Unraid, eksempelvis i `/mnt/user/appdata/fotoarkiv-projekt`.
-2. Kopiér `.env.example` til `.env`. Ret `APPDATA_DIR`, `BACKUP_DIR` og vælg en stærk `APP_PASSWORD`. Sørg for, at `BACKUP_DIR` ligger på et share med tilstrækkelig plads.
-3. Kør fra projektmappen:
+1. Extract the project into `/mnt/user/appdata/fotoarkiv-projekt`.
+2. Copy `.env.example` to `.env`. Set `APPDATA_DIR`, `BACKUP_DIR` and a strong `APP_PASSWORD` with at least 12 characters. Choose a backup share with sufficient free space.
+3. Run from the project folder:
 
    ```sh
    docker compose up -d --build
    ```
 
-4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
-5. Under **Google Fotos-konti**, skriv mailadressen og tryk **Tilføj konto**. Mappen oprettes under `BACKUP_DIR`.
-6. Tryk **Google-login** på den ønskede konto. Et popup-vindue åbner på samme adresse og beskyttes af portalens adgangskode. Chrome starter automatisk og fylder visningen med Google Fotos for den valgte konto; du skal ikke åbne en terminal. Giv browseren lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
-7. Log ind, og tryk derefter **Start backup** på kontoen i portalen. Portalen afslutter login-browseren automatisk, før synkroniseringen begynder. Du kan også bruge **Afslut login** på kontokortet. Hver konto har sin egen daglige kørselsplan omkring klokkeslættet `SYNC_HOUR`.
+4. Open `http://YOUR-UNRAID-IP:8787`. Use any username and the password from `.env`.
+5. Under **Google Photos accounts**, enter an email address and select **Add account**. Its folder is created under `BACKUP_DIR`.
+6. Select **Google sign-in** for the account. A password-protected popup opens the browser on Unraid. Chrome opens Google Photos automatically; no terminal is needed for sign-in. Allow extra time on the first launch. If popups are blocked, sign-in opens in the current tab.
+7. Sign in, then select **Start backup** in the portal. The sign-in browser closes automatically before the sync worker uses the same profile. **Close sign-in** closes it without starting a backup. Each account has a daily schedule around `SYNC_HOUR`.
 
-## Betjening
+## Accounts and operation
 
-- Dashboardet viser samlet antal filer samt status, antal filer og startknapper for hver ny konto. Hovedfeltets seneste kørsel og log gælder stadig den oprindelige konto.
-- `BACKUP_DIR` får filer fra Google Fotos. `APPDATA_DIR/chrome` indeholder Google-login og må ikke deles med andre.
-- Hvis login udløber, åbn **Google-login** for netop den konto igen. Synkroniseringen genoptages normalt fra dens gemte position.
-- Login-containeren har ingen åben port på Unraid og nås gennem portalen. Udgiv ikke port 8787 direkte på internettet; brug dit LAN eller VPN.
-- Hvis browseren ikke åbner, kan opstartsfejlen ses i `APPDATA_DIR/control/login-browser.log` og med `docker compose logs login`. Login-visningen bruger stadig fjernvisning af browseren internt; Google-login kan ikke flyttes til den almindelige browser på din pc og samtidig genbruges direkte af synkroniseringsmotoren.
-- Første download af et stort bibliotek kan tage dage. Den aktuelle kørselslog findes også i `APPDATA_DIR/control/activity.log`.
+- The dashboard refreshes every eight seconds and shows worker availability, file counts, storage usage, recent files, schedules and activity. Select an account card to view its status and log.
+- The **Existing account** keeps its original profile and files in the main backup folder. Additional accounts use folders such as `BACKUP_DIR/user@example.com`. Only add the original account again if you want a separate download starting from the beginning.
+- `APPDATA_DIR/chrome` and the account browser profiles contain Google sign-in credentials. Keep them private.
+- If a Google session expires, select **Google sign-in** for that account again. Sync normally resumes from its saved position.
+- The sign-in container has no exposed Unraid port. Access it through the portal. Keep port 8787 on your LAN or VPN.
+- Browser startup errors appear in `APPDATA_DIR/control/login-browser.log` and `docker compose logs login`. The sign-in popup uses remote browser display internally; signing in through your PC's ordinary browser does not directly provide a session to the sync worker.
+- Repeated sign-in requests for an already open account do not queue additional browser launches. Starting backup requests closure and waits for Chrome to release the profile.
+- The first download of a large library can take days. Logs are also stored under `APPDATA_DIR/control/accounts/<email>/activity.log`; the original account uses `APPDATA_DIR/control/activity.log`.
+- The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `sync` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
 
-## Begrænsninger
+The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. Fotoarkiv does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
 
-Google tilbyder ikke en officiel API til denne type komplet, automatisk backup. Værktøjet styrer derfor webinterfacet og kan holde op med at virke, hvis Google ændrer login eller siden. Der er ingen garanti for, at det virker med din konto, før første synkronisering er afprøvet.
+## Scan an incomplete archive
 
-`gphotos-cdp` synkroniserer hovedbiblioteket. Filer, som kun findes i Arkiv eller i delte albums og ikke i hovedbiblioteket, bliver endnu ikke downloadet. Albumindekseringen læser også deres metadata, men albummapper indeholder kun de filer, der er hentet lokalt. Det sletter ikke fra Google Fotos. Sørg for en separat backup af Unraid-mappen og kontrollér konkrete billeder/videoer efter første kørsel.
+Select **Scan the entire archive** for an account when the local file count is much lower than in Google Photos. The previous position is saved as `APPDATA_DIR/control/accounts/<email>/lastdone-before-rescan` (under `APPDATA_DIR/control` for the original account), and scanning restarts from the oldest part of the timeline.
 
-Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` kræver genstart af `sync`-containeren og får virkning efter næste kørsel. Flere konti kan synkronisere samtidig og bruge betydelig CPU, disk og netværk.
+Existing downloaded files are preserved. Some may be downloaded again and replaced. A full scan can take a long time and requires free space. Avoid opening Google sign-in for the same account while it is running.
 
-## Fuld gennemgang ved ufuldstændigt arkiv
+The worker waits for the timeline to load and reports an error if navigation stops progressing. A successful exit means it reached the content shown by the web interface; it does not prove completeness. Compare file counts and the oldest years against Google Photos.
 
-Hvis antallet af hentede filer er meget lavere end i Google Fotos, skal du vælge **Gennemgå hele arkivet** ud for kontoen. Den eksisterende downloadposition gemmes i `APPDATA_DIR/control/accounts/<mail>/lastdone-before-rescan` (for den gamle konto i `APPDATA_DIR/control`), og gennemgangen starter forfra fra tidslinjens ældste del. Allerede hentede billedfiler slettes ikke. Nogle af dem kan blive hentet igen og erstattet. Første fulde gennemgang af et stort arkiv kan tage lang tid og kræver ledig plads. Undgå at starte Google-login for samme konto under kørsel.
+## Browse photos, videos and albums
 
-Syncmotoren venter nu på, at Google Fotos indlæser tidslinjen, og stopper med fejl, hvis siden ikke ruller. En afsluttet kørsel betyder stadig kun, at værktøjet nåede det, som webinterfacet viste. Sammenlign antal og de ældste årstal med Google Fotos, før du regner kopien for komplet.
+Select **View photos and videos** on an account card. Each account has a separate media page. Choose an album, search filenames, browse thumbnail pages and open photos or videos in the browser. **Download file** downloads an original. Select multiple files and choose **Download selected as ZIP** for a local export.
 
-## Visning og download af lokale filer
+ZIP downloads stream directly to the browser without creating a second complete ZIP on Unraid. Each ZIP is limited to 500 files and 10 GB; larger libraries can be exported in portions. The archive browser reads only local files and uploads nothing to Google. Some media formats cannot be previewed but can still be downloaded. Thumbnails are cached under `APPDATA_DIR/control/thumbnails`. Viewing and downloading require the portal password.
 
-Åbn **Se billeder og videoer** ud for kontoen i portalen på port 8787. Arkivet har sin egen side pr. konto. Vælg eventuelt et album, søg efter filnavn, blad gennem miniaturebillederne, og klik på et billede eller en video for at se den i browseren. **Hent fil** gemmer et enkelt originalt medie. Markér flere filer og vælg **Hent valgte som ZIP** for en lokal kopi. ZIP streames direkte til browseren uden en ekstra fuld ZIP-kopi på Unraid; der kan vælges højst 500 filer og 10 GB pr. download. Store biblioteker kan hentes i flere portioner.
+The gallery uses a separate SQLite read index per account under `APPDATA_DIR/control/archive-index`. The first visit builds it; subsequent album switches query only the selected album and page. Catalog changes are checked at least 30 seconds apart, and a full refresh is scheduled on the next visit after five minutes. Refreshes run in the background while the previous complete index remains available. The index is rebuildable and does not modify original media.
 
-Arkivvisningen læser kun filerne under `BACKUP_DIR` og uploader intet til Google. Browseren kan ikke vise alle billed- og videoformater; en fil kan stadig hentes med **Hent fil**. Miniaturebilleder gemmes under `APPDATA_DIR/control/thumbnails`. Portalen kræver sin adgangskode også for visning og downloads; udgiv ikke port 8787 direkte på internettet.
+## Albums, dates and folder organization
 
-## Afslut login fra portalen
+Backup reads Google Photos album membership and photo dates through the saved browser profile. This uses an unofficial read-only web protocol. It does not modify albums or photos in Google. Protocol fields were checked against [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) and its [response parser](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkiv's implementation is independent and uses only the read methods lcxiM, Z5xsfc and snAcKc.
 
-**Start backup** afslutter automatisk kontoens login-browser og venter på, at Chrome er lukket, før samme profil bruges til synkronisering. **Afslut login** lukker en åben session uden at starte backup. Gentagne klik på Google-login for samme åbne konto opretter ikke flere loginanmodninger. Kontoen og den gemte Google-session bevares.
+Each account uses this on-disk layout. Folder names are preserved when changing the interface language:
 
-## Albums, datoer og mappeorganisering
+- `Bibliotek/YYYY/MM/original-name--Google-id.ext`: one primary file per downloaded item. The Google ID prevents collisions between identical filenames.
+- `Albums/album-title--album-hash/original-name--Google-id.ext`: locally downloaded members of each album. A short hash distinguishes albums with identical titles.
+- `.fotoarkiv/`: album metadata, the authoritative SQLite file catalog and records used to skip already organized downloads.
 
-Galleriet bruger et separat SQLite-indeks pr. konto under `CONTROL_DIR/archive-index`. Første åbning bygger indekset; derefter hentes kun den valgte side og det valgte album. Ændringer i filregisteret kontrolleres med mindst 30 sekunders mellemrum, og indekset opdateres i baggrunden senest ved næste åbning efter fem minutter. Den sidste komplette visning bruges under opdateringen. Indekset kan gendannes fra filerne og backupkataloget og ændrer ikke originalfilerne.
+File modification times use Google's photo timestamp. Year/month folders and displayed Google dates account for Google's timezone offset. EXIF data and media contents are unchanged. Filesystem creation times generally cannot be set to the Google timestamp.
 
-Ved backup læses Google Fotos' albumoversigt og billeddatoer gennem kontoens gemte browserprofil. Det er en uofficiel, læsende webprotokol; den ændrer ikke albums eller billeder hos Google. Protokolfelterne er undersøgt i [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) og [responsformatet](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkivs implementering er selvstændig og bruger kun læsemetoderne lcxiM, Z5xsfc og snAcKc.
+Existing Google-ID folders are organized before and after backup once a complete metadata index is available. **Refresh albums and organize files** on the media page requests organization without downloading media again. Wait for an active backup to finish. Progress appears in the account activity log.
 
-Lokalt får hver konto denne struktur:
+Album files use hard links where supported. Files on different Unraid disks may require verified copies and additional storage. The organization report shows registered album copies. New downloads are organized individually to avoid one folder per photo. Dashboard counts include primary files rather than album references. Existing album files are retained when an album is deleted or renamed in Google Photos.
 
-- `Bibliotek/År/Måned/originalnavn--Google-id.ext`: én hovedfil pr. downloadet medie. Google-id forhindrer sammenblanding af ens filnavne.
-- `Albums/Albumnavn--album-id/originalnavn--Google-id.ext`: alle lokalt hentede medlemmer af albummet. Mappenavnet bruger en kort hash af album-id for at skelne albums med samme navn.
-- `.fotoarkiv/`: albumindeks, SQLite-filregister og oplysninger til at springe allerede organiserede downloads over.
+Organization saves the catalog before removing the old file, rejects symlinks and stops on file conflicts. Interrupted runs can resume. Files without matching Google metadata remain in their original folders and are still shown. Failed or interrupted metadata indexing preserves the previous complete index. Keep a separate backup before large reorganizations.
 
-Filer får ændringsdato fra Googles billeddato (ikke hentetidspunktet). År/måned og arkivets viste dato tager højde for den tidszone, som Google returnerer. EXIF-data og mediefilernes indhold ændres ikke. Serverens filoprettelsesdato kan ikke generelt sættes til Googles dato.
+## Stop a backup
 
-Eksisterende Google-id-mapper omorganiseres automatisk før og efter backup, når et komplet albumindeks er hentet. **Opdater albums og organiser filer** på kontoens billedside kan bestille omorganisering uden at hente mediefiler igen. Vent til en igangværende backup er afsluttet. Fremdriften vises i kontoens aktivitetslog.
+**Stop backup** appears on the account card and its media page while a run is active or pending. It stops the selected account's process group and clears pending requests. Other accounts continue running.
 
-Hardlinks bruges, hvor filsystemet tillader det. På Unraid kan filer på forskellige diske kræve en verificeret kopi; status angiver antallet af registrerede albumkopier. Albummapper kan derfor kræve ekstra plads. Nye downloads organiseres løbende efter hver fil, så der ikke ophobes en Google-id-mappe pr. billede. Statistikken tæller kun hovedfiler, ikke albumreferencer. Eksisterende albumfiler slettes ikke, hvis et album senere fjernes eller omdøbes hos Google; dette er et bevarende backuparkiv.
+## Update an existing Unraid installation
 
-Migrationen gemmer filregisteret før den gamle fil fjernes, afviser symlinks og stopper ved filkonflikter. En afbrudt kørsel kan genoptages. Filer uden matchende Google-metadata bliver i deres gamle mappe og vises stadig i arkivet. Et afbrudt eller fejlet metadataindeks erstatter ikke det sidste komplette indeks. Hold en separat backup af serverens filer før store omorganiseringer.
-
-## Opdater eksisterende installation på Unraid
-
-Installationen fra ZIP/tar er ikke et git-checkout. Brug følgende i Unraid-terminalen. Kommandoen bevarer `.env`, appdata og downloadede medier:
+An installation extracted from ZIP/tar is not a Git checkout. Run this in the Unraid terminal. It preserves `.env`, appdata and downloaded media:
 
 ```sh
 (
@@ -103,8 +98,6 @@ docker compose up -d --no-deps --force-recreate sync login dashboard
 )
 ```
 
-Efter opdatering: genindlæs portalen og åbn kontoens billedside. Vælg **Opdater albums og organiser filer**, eller start backup. Første organisering kan tage tid, især hvis hardlinks ikke er mulige. Login kræves kun igen, hvis den gemte Google-session er udløbet.
+After updating, refresh the portal and open the account's media page. Select **Refresh albums and organize files**, or start backup. Initial organization can take time, especially when hard links are unavailable. Sign in again only if the saved Google session has expired.
 
-## Afbryd en kørsel
-
-**Afbryd backup** vises ved kontoen og på dens billedside, når en kørsel er aktiv eller bestilt. Stopanmodningen gælder kun den valgte konto og afslutter dens procesgruppe; andre konti fortsætter. Portalen viser **Afbryder…**, indtil processen er lukket. Status bliver **Afbrudt af brugeren** (exitkode 130). Hentede filer og downloadposition bevares; en delvis download kan blive hentet igen ved næste start. Den daglige kørselsplan fortsætter. En igangværende organisering kan også afbrydes og genoptages.
+For dashboard-only updates, copy the new `dashboard/` directory and rebuild/recreate only `dashboard`; the sync and sign-in containers can continue running.

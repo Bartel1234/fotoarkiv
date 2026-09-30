@@ -23,6 +23,25 @@ PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
 LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
 ASSETS = Path(__file__).parent
+TRANSLATIONS = json.loads((ASSETS / 'translations.json').read_text(encoding='utf-8'))
+
+def translated(request, text):
+    return text if request.cookies.get('fotoarkiv_language') == 'da' else TRANSLATIONS.get(text, text)
+
+def page_template(name):
+    catalog = json.dumps(TRANSLATIONS, ensure_ascii=False).replace('<', '\u003c')
+    return (ASSETS / name).read_text(encoding='utf-8').replace('</head>', '<script id="translation-catalog" type="application/json">' + catalog + '</script></head>')
+
+@web.middleware
+async def language(request, handler):
+    try:
+        response = await handler(request)
+    except web.HTTPException as error:
+        if error.text in TRANSLATIONS:
+            error.text = translated(request, error.text)
+        raise
+    return response
+
 _cache = {'at': 0, 'data': {}}
 _account_cache = {'at': 0, 'counts': {}}
 EMAIL = re.compile(r'^[a-z0-9][a-z0-9._+-]{0,63}@[a-z0-9][a-z0-9.-]{0,62}\.[a-z]{2,24}$')
@@ -187,7 +206,7 @@ async def auth(request, handler):
     except (ValueError, UnicodeError):
         valid = False
     if not valid:
-        return web.Response(status=401, text='Login kræves', headers={'WWW-Authenticate': 'Basic realm="Fotoarkiv Backup"'})
+        return web.Response(status=401, text=translated(request, 'Login kræves'), headers={'WWW-Authenticate': 'Basic realm="Fotoarkiv Backup"'})
     response = await handler(request)
     response.headers.setdefault('Cache-Control', 'no-store')
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
@@ -195,7 +214,7 @@ async def auth(request, handler):
 
 
 async def home(request):
-    template = (ASSETS / 'index.html').read_text(encoding='utf-8')
+    template = page_template('index.html')
     return web.Response(text=template.replace('%%CSRF_TOKEN%%', TOKEN), content_type='text/html',
                         headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
 
@@ -204,14 +223,23 @@ async def archive_page(request):
     account = request.match_info['email']
     if account != 'legacy' and account not in account_names():
         raise web.HTTPNotFound(text='Ukendt konto')
-    template = (ASSETS / 'archive.html').read_text(encoding='utf-8')
+    template = page_template('archive.html')
     return web.Response(text=template.replace('%%ACCOUNT%%', html.escape(account, quote=True)).replace('%%CSRF_TOKEN%%', TOKEN),
                         content_type='text/html',
                         headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
 
 
 async def api_status(request):
-    return web.json_response(await asyncio.to_thread(status))
+    data = await asyncio.to_thread(status)
+    for record in [data, *data.get('accounts', [])]:
+        for key in ('label', 'last_run', 'next_run', 'log'):
+            if key in record:
+                record[key] = translated(request, record[key])
+                if key == 'next_run' and request.cookies.get('fotoarkiv_language') != 'da':
+                    record[key] = record[key].replace(' kl. ', ' at ')
+                if key == 'next_run' and request.cookies.get('fotoarkiv_language') != 'da':
+                    record[key] = record[key].replace(' kl. ', ' at ')
+    return web.json_response(data)
 
 
 async def asset(request):
@@ -352,13 +380,13 @@ async def client_session(app):
 if __name__ == '__main__':
     if PASSWORD == 'SKIFT_TIL_EN_LANG_ADGANGSKODE' or len(PASSWORD) < 12:
         raise SystemExit('Sæt APP_PASSWORD til mindst 12 tegn i .env')
-    app = web.Application(middlewares=[auth])
+    app = web.Application(middlewares=[language, auth])
     app['account_lock'] = asyncio.Lock()
     app.cleanup_ctx.append(client_session)
     app.router.add_get('/', home)
     app.router.add_get('/archive/{email}', archive_page)
     app.router.add_get('/api/status', api_status)
-    app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
+    app.router.add_get('/{name:style.css|app.js|archive.js|i18n.js|flag-en.svg|flag-da.svg}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
     app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop}', account_action)

@@ -50,3 +50,5 @@
 button:focus-visible,a:focus-visible { outline:3px solid #9479ee; outline-offset:3px; }
 
 button[hidden] { display:none; }
+
+.language-switch{display:flex;gap:6px;align-items:center}.language-switch button{display:flex;align-items:center;gap:5px;padding:7px 9px;border:1px solid #9aa4b4;border-radius:8px;background:#fff;color:#26324b;cursor:pointer;font-size:12px;font-weight:700}.language-switch button[aria-pressed=true]{border-color:#6550cf;background:#eee9ff;color:#382777;box-shadow:0 0 0 1px #6550cf}.language-switch button:focus-visible{outline:3px solid #6550cf;outline-offset:3px}.language-switch img{display:block;border-radius:2px}.topright{flex-wrap:wrap}
