@@ -1,3 +1,4 @@
+import html
 import base64
 import asyncio
 import hmac
@@ -194,6 +195,16 @@ async def home(request):
                         headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
 
 
+async def archive_page(request):
+    account = request.match_info['email']
+    if account != 'legacy' and account not in account_names():
+        raise web.HTTPNotFound(text='Ukendt konto')
+    template = (ASSETS / 'archive.html').read_text(encoding='utf-8')
+    return web.Response(text=template.replace('%%ACCOUNT%%', html.escape(account, quote=True)).replace('%%CSRF_TOKEN%%', TOKEN),
+                        content_type='text/html',
+                        headers={'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'"})
+
+
 async def api_status(request):
     return web.json_response(await asyncio.to_thread(status))
 
@@ -331,6 +342,7 @@ if __name__ == '__main__':
     app['account_lock'] = asyncio.Lock()
     app.cleanup_ctx.append(client_session)
     app.router.add_get('/', home)
+    app.router.add_get('/archive/{email}', archive_page)
     app.router.add_get('/api/status', api_status)
     app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
     app.router.add_post('/start', start)
