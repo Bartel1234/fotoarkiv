@@ -35,3 +35,6 @@
 #archive-media img,#archive-media video { display:block; max-width:min(88vw,1000px); max-height:75vh; }
 #archive-caption { overflow-wrap:anywhere; font-size:13px; color:#52617a; }
 .archive-preview a.primary { display:inline-block; padding:10px 15px; border-radius:8px; }
+
+.account-card > .archive-panel { flex-basis:100%; width:100%; min-width:0; margin:10px 0 0; }
+.archive-panel[hidden] { display:none; }
