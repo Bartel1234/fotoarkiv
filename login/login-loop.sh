@@ -1,7 +1,17 @@
 #!/bin/sh
-rm -f /control/login-active
-trap 'rm -f /control/login-active; exit 0' TERM INT EXIT
+browser_pid=''
+cleanup() {
+  if [ -n "$browser_pid" ] && kill -0 "$browser_pid" 2>/dev/null; then
+    kill -TERM "$browser_pid" 2>/dev/null || true
+    wait "$browser_pid" 2>/dev/null || true
+  fi
+  rm -f /control/login-active /control/login-heartbeat
+}
+trap 'cleanup; exit 0' TERM INT
+trap cleanup EXIT
+rm -f /control/login-active /control/login-close-request
 while :; do
+  date +%s > /control/login-heartbeat
   if [ -f /control/login-request ]; then
     request=$(cat /control/login-request 2>/dev/null || true)
     rm -f /control/login-request
@@ -14,15 +24,55 @@ while :; do
     if [ -n "$profile" ]; then
       state=/control
       if [ "$account" != legacy ]; then state="/control/accounts/$account"; fi
-      while [ -f "$state/running" ]; do sleep 5; done
+      cancelled=false
+      while [ -f "$state/running" ]; do
+        date +%s > /control/login-heartbeat
+        if [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
+          rm -f /control/login-close-request
+          cancelled=true
+          break
+        fi
+        sleep 2
+      done
+      if [ "$cancelled" = true ]; then continue; fi
       mkdir -p "$profile"
       echo "$account" > /control/login-active
       rm -f "$profile/SingletonLock" "$profile/SingletonCookie" "$profile/SingletonSocket"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Åbner login-browser for $account" >> /control/login-browser.log
-      google-chrome --user-data-dir="$profile" --no-sandbox --disable-setuid-sandbox --disable-gpu --disable-nacl --disable-dev-shm-usage --start-maximized --no-first-run https://photos.google.com >> /control/login-browser.log 2>&1
-      echo "$(date '+%Y-%m-%d %H:%M:%S') Browser lukket for $account (exitkode $?)" >> /control/login-browser.log
+      google-chrome --user-data-dir="$profile" --no-sandbox --disable-setuid-sandbox --disable-gpu --disable-nacl --disable-dev-shm-usage --start-maximized --no-first-run https://photos.google.com >> /control/login-browser.log 2>&1 &
+      browser_pid=$!
+      closing=false
+      while kill -0 "$browser_pid" 2>/dev/null; do
+        date +%s > /control/login-heartbeat
+        # Repeated clicks must not queue a second browser for the same account.
+        if [ -f /control/login-request ]; then
+          queued=$(cat /control/login-request 2>/dev/null || true)
+          if [ "${queued%% *}" = "$account" ]; then
+            rm -f /control/login-request
+          elif [ "$closing" = false ]; then
+            kill -TERM "$browser_pid" 2>/dev/null || true
+            closing=true
+          fi
+        fi
+        if [ "$(cat /control/login-close-request 2>/dev/null)" = "$account" ]; then
+          rm -f /control/login-close-request
+          if [ "$closing" = false ]; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S') Afslutter login via portalen: $account" >> /control/login-browser.log
+            kill -TERM "$browser_pid" 2>/dev/null || true
+            closing=true
+          fi
+        fi
+        sleep 2
+      done
+      wait "$browser_pid"
+      result=$?
+      browser_pid=''
+      echo "$(date '+%Y-%m-%d %H:%M:%S') Browser lukket for $account (exitkode $result)" >> /control/login-browser.log
       rm -f /control/login-active
     fi
+  else
+    # No Chrome process is owned by this loop, so any old marker is stale.
+    rm -f /control/login-active /control/login-close-request
   fi
   sleep 2
 done
