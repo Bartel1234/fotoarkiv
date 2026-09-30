@@ -80,21 +80,9 @@ async function archiveLoad() {
   }
 }
 
-async function archiveInit() {
-  try {
-    const response = await fetch('/api/status');
-    if (!response.ok) throw new Error('Kunne ikke hente konti');
-    const data = await response.json();
-    const select = archiveEl('archive-account');
-    const legacy = document.createElement('option'); legacy.value = 'legacy'; legacy.textContent = 'Eksisterende konto';
-    select.append(legacy);
-    for (const account of data.accounts || []) {
-      const option = document.createElement('option'); option.value = account.email; option.textContent = account.email;
-      select.append(option);
-    }
-    if (data.accounts?.length) select.value = data.accounts[0].email;
-    archiveState.account = select.value;
-  } catch (error) { archiveEl('archive-message').textContent = error.message; }
+function archiveInit() {
+  archiveState.account = document.body.dataset.account;
+  archiveLoad();
 }
 
 archiveEl('archive-account').addEventListener('change', event => {
@@ -113,7 +101,7 @@ archiveEl('archive-zip').addEventListener('click', () => {
   const form = document.createElement('form'); form.method = 'post'; form.action = '/api/archive/zip';
   form.target = 'archive-download-frame'; form.hidden = true;
   const fields = {
-    token: document.querySelector('#start-form input[name=token]').value,
+    token: archiveEl('archive-token').value,
     account: archiveState.account,
     files: JSON.stringify(selected.map(item => ({id: item.id, name: item.name})))
   };
@@ -123,16 +111,4 @@ archiveEl('archive-zip').addEventListener('click', () => {
   document.body.append(form); form.submit(); form.remove();
   archiveEl('archive-message').textContent = 'ZIP-download er startet. Filerne pakkes, mens de sendes til browseren.';
 });
-window.openAccountArchive = (account, card) => {
-  if (archiveState.account !== account) {
-    archiveState.selected.clear(); archiveState.page = 1;
-  }
-  archiveState.account = account;
-  window.archiveAccount = account;
-  archiveEl('archive-account').value = account;
-  const section = archiveEl('archive');
-  section.hidden = false;
-  card.append(section);
-  archiveLoad();
-};
 archiveInit();
