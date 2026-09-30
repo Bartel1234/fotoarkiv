@@ -130,6 +130,7 @@ def account_summaries():
         result.append({'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
+                       'login_active': read('login-active') == email,
                        'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit'),
                        'next_run': account_next_run, 'log': account_log or 'Der er endnu ingen aktivitet for denne konto.'})
     return result
@@ -165,7 +166,7 @@ def status():
     else:
         label, tone = 'Klar til første kørsel', 'pending'
     return {**inventory(), 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
-            'running': running, 'pending': pending, 'last_run': read('last-run') or 'Ingen endnu',
+            'running': running, 'pending': pending, 'login_active': read('login-active') == 'legacy', 'last_run': read('last-run') or 'Ingen endnu',
             'next_run': next_run, 'last_exit': exit_code, 'started': read('running') if running else '',
             'log': log or 'Der er endnu ingen aktivitet.'}
 
@@ -201,6 +202,13 @@ async def asset(request):
     return web.FileResponse(ASSETS / request.match_info['name'])
 
 
+
+def request_login_close(email):
+    queued = read('login-request').split(' ', 1)[0]
+    if queued == email:
+        (CONTROL / 'login-request').unlink(missing_ok=True)
+    (CONTROL / 'login-close-request').write_text(email, encoding='utf-8')
+
 async def start(request):
     if request.content_type != 'application/x-www-form-urlencoded' or request.content_length is None or not 0 < request.content_length <= 4096:
         raise web.HTTPBadRequest(text='Forkert formular')
@@ -208,6 +216,7 @@ async def start(request):
     if not hmac.compare_digest(body.get('token', [''])[0], TOKEN):
         raise web.HTTPForbidden(text='Ugyldig formular')
     if not (CONTROL / 'running').exists():
+        request_login_close('legacy')
         (CONTROL / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
     raise web.HTTPSeeOther('/')
 
@@ -244,13 +253,17 @@ async def account_action(request):
     if email != 'legacy' and email not in account_names():
         raise web.HTTPNotFound(text='Ukendt konto')
     if action == 'login':
-        (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
+        if read('login-active') != email:
+            (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
+    elif action == 'close-login':
+        request_login_close(email)
     elif action in ('start', 'rescan'):
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
         if action == 'rescan':
             if (state / 'running').exists():
                 raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
             (state / 'rescan-request').write_text(str(int(time.time())), encoding='utf-8')
+        request_login_close(email)
         (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
     else:
         raise web.HTTPNotFound()
@@ -322,7 +335,7 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|start|rescan}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)
