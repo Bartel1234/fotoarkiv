@@ -54,6 +54,15 @@ class OrganizationTests(unittest.TestCase):
         path,_,_=self.row();self.assertTrue((self.root/path).is_file())
         self.assertFalse((self.root/'.fotoarkiv/downloaded.json').exists())
         organize.organize(self.root);self.assertIn(ID,json.loads((self.root/'.fotoarkiv/downloaded.json').read_text()))
+    def test_google_timezone_crosses_month_boundary(self):
+        self.metadata['items'][ID]['timestamp']=1041377400000
+        self.metadata['items'][ID]['offset']=7200
+        self.save();organize.organize(self.root)
+        path,stamp,_=self.row()
+        self.assertIn('Bibliotek/2003/01/',path)
+        self.assertEqual(stamp,1041377400)
+        with sqlite3.connect(self.root/'.fotoarkiv/catalog.sqlite') as db:
+            self.assertEqual(db.execute('SELECT date_label FROM files').fetchone()[0],'01/01/2003 01:30')
     def test_symlink_target_rejected(self):
         with tempfile.TemporaryDirectory() as outside:
             (self.root/'Bibliotek').symlink_to(outside,target_is_directory=True)
