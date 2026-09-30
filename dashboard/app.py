@@ -27,6 +27,21 @@ _account_cache = {'at': 0, 'counts': {}}
 EMAIL = re.compile(r'^[a-z0-9][a-z0-9._+-]{0,63}@[a-z0-9][a-z0-9.-]{0,62}\.[a-z]{2,24}$')
 
 
+
+def readable_log(raw):
+    kept, browser_messages = [], 0
+    for line in raw.splitlines():
+        if 'Event: {Type:keyDown' in line or 'Event: {Type:keyUp' in line:
+            continue
+        if ('ERROR: unhandled page event *page.EventDownloadWillBegin' in line
+                or 'ERROR: could not unmarshal event: unknown ClientNavigationReason value' in line):
+            browser_messages += 1
+            continue
+        kept.append(line)
+    if browser_messages:
+        kept.insert(0, f'{browser_messages} gentagne browsermeddelelser samlet (DownloadWillBegin/ClientNavigationReason). Den fulde rå log bevares i activity.log.')
+    return '\n'.join(kept)
+
 def read(name, default=''):
     try:
         return (CONTROL / name).read_text(encoding='utf-8').strip()
@@ -105,7 +120,7 @@ def account_summaries():
             online = False
         try:
             with (state / 'activity.log').open(encoding='utf-8', errors='replace') as f:
-                account_log = ''.join(deque(f, maxlen=90))[-14000:]
+                account_log = readable_log(''.join(deque(f, maxlen=180)))[-14000:]
         except OSError:
             account_log = ''
         try:
@@ -123,7 +138,7 @@ def account_summaries():
 def status():
     try:
         with (CONTROL / 'activity.log').open(encoding='utf-8', errors='replace') as f:
-            log = ''.join(deque(f, maxlen=90))[-14000:]
+            log = readable_log(''.join(deque(f, maxlen=180)))[-14000:]
     except OSError:
         log = ''
     try:
