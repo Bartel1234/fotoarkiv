@@ -94,7 +94,6 @@ async function archiveInit() {
     }
     if (data.accounts?.length) select.value = data.accounts[0].email;
     archiveState.account = select.value;
-    archiveLoad();
   } catch (error) { archiveEl('archive-message').textContent = error.message; }
 }
 
@@ -124,4 +123,16 @@ archiveEl('archive-zip').addEventListener('click', () => {
   document.body.append(form); form.submit(); form.remove();
   archiveEl('archive-message').textContent = 'ZIP-download er startet. Filerne pakkes, mens de sendes til browseren.';
 });
+window.openAccountArchive = (account, card) => {
+  if (archiveState.account !== account) {
+    archiveState.selected.clear(); archiveState.page = 1;
+  }
+  archiveState.account = account;
+  window.archiveAccount = account;
+  archiveEl('archive-account').value = account;
+  const section = archiveEl('archive');
+  section.hidden = false;
+  card.append(section);
+  archiveLoad();
+};
 archiveInit();
