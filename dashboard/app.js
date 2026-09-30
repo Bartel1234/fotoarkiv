@@ -90,8 +90,6 @@ function actionButton(label, account, action) {
 }
 function renderAccounts(accounts, summary) {
   const list = el('account-list');
-  const archive = el('archive');
-  if (archive && list.contains(archive)) archive.remove();
   list.replaceChildren();
   const legacy = {email: 'legacy', folder: 'Hovedmappen (eksisterende konto)', count: null, bytes: null,
                   online: summary.online, running: summary.running, pending: summary.pending, login_active: summary.login_active, last_run: summary.last_run};
@@ -99,7 +97,7 @@ function renderAccounts(accounts, summary) {
     const card = document.createElement('div'); card.className = 'account-card';
     if (account.email === selectedAccount) card.style.borderColor = '#8370f5';
     card.addEventListener('click', event => {
-      if (event.target.closest('button, #archive')) return;
+      if (event.target.closest('button')) return;
       selectedAccount = account.email; refresh();
     });
     const detail = document.createElement('div');
@@ -116,7 +114,7 @@ function renderAccounts(accounts, summary) {
     browse.type = 'button'; browse.className = 'outline'; browse.textContent = 'Se billeder og videoer';
     browse.addEventListener('click', event => {
       event.stopPropagation(); selectedAccount = account.email;
-      window.openAccountArchive(account.email, card);
+      window.location.assign('/archive/' + encodeURIComponent(account.email));
     });
     controls.append(browse);
     if (account.login_active) controls.append(actionButton('Afslut login', account.email, 'close-login'));
@@ -126,7 +124,6 @@ function renderAccounts(accounts, summary) {
     feedback.setAttribute('aria-live', 'polite');
     feedback.textContent = account.running ? '● Backup kører nu – nye filer vises i overblikket.' : account.pending ? account.login_active ? '◷ Afslutter login-browseren før backup…' : '◷ Start er bestilt – venter på synkroniseringsmotoren.' : account.login_active ? 'Login-browseren er åben. Start backup lukker den automatisk.' : '';
     card.append(detail, controls, feedback);
-    if (archive && window.archiveAccount === account.email) card.append(archive);
     list.append(card);
   }
 }
