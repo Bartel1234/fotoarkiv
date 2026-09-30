@@ -11,7 +11,7 @@ from urllib.parse import quote
 from aiohttp import web
 from PIL import Image, ImageOps, UnidentifiedImageError
 from zipstream import ZipStream, ZIP_STORED
-from archive_index import ArchiveIndex, query as query_index
+from archive_index import ArchiveIndex, query as query_index, album_members
 
 ITEM = re.compile(r'^[A-Za-z0-9_-]{20,120}$')
 IMAGES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.bmp', '.tif', '.tiff'}
@@ -130,6 +130,38 @@ def next_chunk(iterator):
     return next(iterator, None)
 
 
+def prepare_album(root, target, album):
+    title, members = album_members(target, album)
+    if title is None or not members:
+        raise web.HTTPNotFound(text='Albummet har ingen lokale filer')
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', title).strip(' .')[:100] or 'album'
+    selected, total = [], 0
+    for relative in members:
+        path = checked_path(root, relative)
+        if not path.is_file() or path.suffix.lower() not in IMAGES | VIDEOS:
+            raise web.HTTPConflict(text='Albumindekset skal opdateres. Genindlæs galleriet og prøv igen.')
+        total += path.stat().st_size
+        selected.append((path, name + '/' + path.name))
+    return selected, total, name + '.zip'
+
+async def album_selection(request, data):
+    account = data.get('account', '')
+    root = account_root(request, account)
+    album = data.get('album', '')
+    if not isinstance(album, str) or not album or album == '__none__' or len(album) > 200:
+        raise web.HTTPBadRequest(text='Vælg et album først')
+    target = await request.app['archive_index'].ensure(account, root)
+    return await asyncio.to_thread(prepare_album, root, target, album)
+
+async def album_info(request):
+    if request.content_type != 'application/x-www-form-urlencoded' or (request.content_length or 0) > 4096:
+        raise web.HTTPBadRequest(text='Ugyldig anmodning')
+    data = await request.post()
+    if not request.app['valid_token'](data.get('token', '')):
+        raise web.HTTPForbidden(text='Ugyldig formular')
+    selected, total, filename = await album_selection(request, data)
+    return web.json_response({'count':len(selected), 'bytes':total, 'filename':filename})
+
 async def download_zip(request):
     if request.content_type != 'application/x-www-form-urlencoded' or (request.content_length or 0) > 100000:
         raise web.HTTPBadRequest(text='Ugyldig anmodning')
@@ -137,27 +169,31 @@ async def download_zip(request):
     if not request.app['valid_token'](data.get('token', '')):
         raise web.HTTPForbidden(text='Ugyldig formular')
     account = data.get('account', '')
-    try:
-        files = json.loads(data.get('files', '[]'))
-    except (ValueError, TypeError):
-        raise web.HTTPBadRequest(text='Ugyldigt filvalg')
-    if not isinstance(files, list) or not 1 <= len(files) <= MAX_ZIP_FILES:
-        raise web.HTTPBadRequest(text='Vælg mellem 1 og 500 filer')
-    selected, total = [], 0
-    for entry in files:
-        if not isinstance(entry, dict):
+    filename = 'fotoarkiv-selection.zip'
+    if 'album' in data:
+        selected, total, filename = await album_selection(request, data)
+    else:
+        try:
+            files = json.loads(data.get('files', '[]'))
+        except (ValueError, TypeError):
             raise web.HTTPBadRequest(text='Ugyldigt filvalg')
-        path = media_path(request, account, entry.get('id', ''), entry.get('name', ''))
-        total += path.stat().st_size
-        if total > MAX_ZIP_BYTES:
-            raise web.HTTPBadRequest(text='Vælg højst 10 GB ad gangen')
-        selected.append((path, str(path.relative_to(account_root(request,account)))))
+        if not isinstance(files, list) or not 1 <= len(files) <= MAX_ZIP_FILES:
+            raise web.HTTPBadRequest(text='Vælg mellem 1 og 500 filer')
+        selected, total = [], 0
+        for entry in files:
+            if not isinstance(entry, dict):
+                raise web.HTTPBadRequest(text='Ugyldigt filvalg')
+            path = await asyncio.to_thread(media_path, request, account, entry.get('id', ''), entry.get('name', ''))
+            total += path.stat().st_size
+            if total > MAX_ZIP_BYTES:
+                raise web.HTTPBadRequest(text='Vælg højst 10 GB ad gangen')
+            selected.append((path, str(path.relative_to(account_root(request,account)))))
     zip_file = ZipStream(compress_type=ZIP_STORED)
     for path, item in selected:
         zip_file.add_path(path, item)
     response = web.StreamResponse(headers={
         'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="fotoarkiv-udvalg.zip"',
+        'Content-Disposition': "attachment; filename*=UTF-8''" + quote(filename, safe=''),
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'no-store'})
     await response.prepare(request)
@@ -184,3 +220,4 @@ def setup(app, photos_root, thumb_root, account_names, valid_token):
     app.router.add_get('/api/archive/file/{account}/{item}/{name}', file_response)
     app.router.add_get('/api/archive/thumb/{account}/{item}/{name}', thumbnail)
     app.router.add_post('/api/archive/zip', download_zip)
+    app.router.add_post('/api/archive/album', album_info)

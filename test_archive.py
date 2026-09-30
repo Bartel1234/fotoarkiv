@@ -37,6 +37,32 @@ async def main():
             assert response.status==200
             with zipfile.ZipFile(io.BytesIO(await response.read())) as z:
                 assert len(z.namelist())==2 and all(n.startswith('Bibliotek/2003/01/') for n in z.namelist())
+            fields={'token':'test-token','account':'test@example.com','album':album}
+            response=await client.post('/api/archive/album',data=fields);assert response.status==200
+            info=await response.json();assert info['count']==2 and info['filename']=='Familie.zip'
+            response=await client.post('/api/archive/zip',data=fields);assert response.status==200
+            assert 'Familie.zip' in response.headers['Content-Disposition']
+            with zipfile.ZipFile(io.BytesIO(await response.read())) as z:
+                assert len(z.namelist())==2 and all(n.startswith('Familie/') for n in z.namelist())
+                assert z.testzip() is None
+            for route in ['/api/archive/album','/api/archive/zip']:
+                response=await client.post(route,data={**fields,'token':'bad'});assert response.status==403
+                response=await client.post(route,data={**fields,'account':'other@example.com'});assert response.status==404
+                response=await client.post(route,data={**fields,'album':'__none__'});assert response.status==400
+                response=await client.post(route,data={**fields,'album':'unknown'});assert response.status==404
+            # Full album export spans pages and is separate from the 500-file manual limit.
+            import sqlite3
+            import archive_index
+            with sqlite3.connect(root/'.fotoarkiv/catalog.sqlite') as db:
+                for n in range(501):
+                    name=f'additional-{n}.jpg';relative='Bibliotek/2003/01/'+name
+                    (root/relative).write_bytes(b'album-test')
+                    db.execute('INSERT INTO files VALUES(?,?,?,?,?,?)',(item,name,relative,1041379200,json.dumps([{'id':album,'title':'Familie'}]),'01/01/2003 00:00'))
+            archive_index.rebuild(root,app['archive_index'].target('test@example.com'))
+            response=await client.post('/api/archive/album',data=fields);assert (await response.json())['count']==503
+            response=await client.post('/api/archive/zip',data=fields);assert response.status==200
+            with zipfile.ZipFile(io.BytesIO(await response.read())) as z:
+                assert len(z.namelist())==503 and z.testzip() is None
             response=await client.get('/api/archive?account=other@example.com');assert response.status==404
             target=root/item;target.symlink_to(base,target_is_directory=True)
             response=await client.get('/api/archive/file/test@example.com/'+item+'/unknown.jpg');assert response.status==404

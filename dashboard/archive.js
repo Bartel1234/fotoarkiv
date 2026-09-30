@@ -85,6 +85,8 @@ async function archiveLoad() {
     albumSelect.value=chosen;
     const org=data.organization;
     archiveEl('organization-status').textContent=org ? I18n.t('Senest organiseret: ')+org.updated+(org.missing_metadata ? ' · '+org.missing_metadata+I18n.t(' filer uden Google-metadata') : '')+(org.copies ? ' · '+org.copies+I18n.t(' albumkopier (hardlink ikke muligt)') : '') : I18n.t('Filerne er endnu ikke organiseret.');
+    archiveEl('archive-album-download').disabled = !chosen || chosen === '__none__';
+    archiveEl('archive-album-download').title = I18n.t('ZIP indeholder hele albummet, uanset sidetal og søgning.');
     archiveState.items = data.items;
     archiveState.total = data.total;
     archiveRender();
@@ -128,7 +130,7 @@ archiveEl('archive-zip').addEventListener('click', () => {
 });
 archiveInit();
 
-archiveEl('archive-album').addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
+archiveEl('archive-album').addEventListener('change',()=>{archiveEl('archive-album-download').disabled=true;archiveState.page=1;archiveState.selected.clear();archiveLoad();});
 archiveEl('archive-organize').addEventListener('click',async()=>{
   const button=archiveEl('archive-organize');button.disabled=true;
   try {
@@ -175,3 +177,23 @@ archiveRunStatus();
 setInterval(archiveRunStatus,8000);
 
 window.addEventListener("languagechange", () => { archiveLoad(); archiveRunStatus(); });
+
+archiveEl('archive-album-download').addEventListener('click', async () => {
+  const album=archiveEl('archive-album').value;
+  if(!album || album==='__none__') return;
+  const button=archiveEl('archive-album-download');button.disabled=true;
+  archiveEl('archive-message').textContent=I18n.t('Forbereder albumdownload…');
+  try {
+    const fields={token:archiveEl('archive-token').value,account:archiveState.account,album};
+    const response=await fetch('/api/archive/album',{method:'POST',body:new URLSearchParams(fields)});
+    if(!response.ok) throw Error(await response.text());
+    const info=await response.json();
+    const form=document.createElement('form');form.method='post';form.action='/api/archive/zip';form.target='archive-download-frame';form.hidden=true;
+    for(const [key,value] of Object.entries(fields)) {
+      const input=document.createElement('input');input.type='hidden';input.name=key;input.value=value;form.append(input);
+    }
+    document.body.append(form);form.submit();form.remove();
+    archiveEl('archive-message').textContent=I18n.t('Albumdownload er startet: ')+info.filename+' · '+archiveFormat(info.count)+I18n.t(' filer')+' · '+archiveSize(info.bytes);
+  } catch(error) {archiveEl('archive-message').textContent=error.message;}
+  finally {const chosen=archiveEl('archive-album').value;button.disabled=!chosen || chosen==='__none__';}
+});

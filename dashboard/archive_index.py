@@ -146,3 +146,10 @@ class ArchiveIndex:
     async def close(self):
         # Finish worker-thread writes before releasing the application's filesystem.
         if self.tasks:await asyncio.gather(*list(self.tasks.values()),return_exceptions=True)
+
+def album_members(target, album):
+    with sqlite3.connect(target.as_uri()+'?mode=ro',uri=True) as db:
+        title=db.execute('SELECT title FROM albums WHERE id=?',(album,)).fetchone()
+        if title is None:return None,[]
+        rows=db.execute('SELECT f.path FROM members m JOIN files f ON f.id=m.id AND f.name=m.name WHERE m.album=? ORDER BY m.stamp,m.id,m.name',(album,)).fetchall()
+        return title[0],[row[0] for row in rows]

@@ -182,5 +182,13 @@
   "Venter på, at login-browseren frigiver kontoen.": "Waiting for the sign-in browser to release the account.",
   "Venter på, at kontoens processer afsluttes.": "Waiting for this account’s processes to stop.",
   " indekserede billeder · ": " indexed photos · ",
-  " albums": " albums"
+  " albums": " albums",
+  "Download album": "Download album",
+  "Vælg et album først": "Select an album first",
+  "Albummet har ingen lokale filer": "The album has no local files",
+  "Albumindekset skal opdateres. Genindlæs galleriet og prøv igen.": "The album index needs refreshing. Reload the gallery and try again.",
+  "Forbereder albumdownload…": "Preparing album download…",
+  "Albumdownload er startet: ": "Album download started: ",
+  "ZIP indeholder hele albummet, uanset sidetal og søgning.": "The ZIP contains the entire album, regardless of page or search.",
+  "Hent album": "Download album"
 }
