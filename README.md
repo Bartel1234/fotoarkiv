@@ -62,6 +62,8 @@ Arkivvisningen læser kun filerne under `BACKUP_DIR` og uploader intet til Googl
 
 ## Albums, datoer og mappeorganisering
 
+Galleriet bruger et separat SQLite-indeks pr. konto under `CONTROL_DIR/archive-index`. Første åbning bygger indekset; derefter hentes kun den valgte side og det valgte album. Ændringer i filregisteret kontrolleres med mindst 30 sekunders mellemrum, og indekset opdateres i baggrunden senest ved næste åbning efter fem minutter. Den sidste komplette visning bruges under opdateringen. Indekset kan gendannes fra filerne og backupkataloget og ændrer ikke originalfilerne.
+
 Ved backup læses Google Fotos' albumoversigt og billeddatoer gennem kontoens gemte browserprofil. Det er en uofficiel, læsende webprotokol; den ændrer ikke albums eller billeder hos Google. Protokolfelterne er undersøgt i [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) og [responsformatet](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkivs implementering er selvstændig og bruger kun læsemetoderne lcxiM, Z5xsfc og snAcKc.
 
 Lokalt får hver konto denne struktur:

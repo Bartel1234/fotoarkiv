@@ -4,15 +4,14 @@ import os
 import re
 import json
 import hashlib
-import time
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
 from aiohttp import web
 from PIL import Image, ImageOps, UnidentifiedImageError
 from zipstream import ZipStream, ZIP_STORED
+from archive_index import ArchiveIndex, query as query_index
 
 ITEM = re.compile(r'^[A-Za-z0-9_-]{20,120}$')
 IMAGES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.bmp', '.tif', '.tiff'}
@@ -20,7 +19,6 @@ VIDEOS = {'.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv', '.3gp'}
 PAGE_SIZE = 48
 MAX_ZIP_FILES = 500
 MAX_ZIP_BYTES = 10 * 1024**3
-_cache = {}
 
 
 def account_root(request, account):
@@ -31,16 +29,6 @@ def account_root(request, account):
         raise web.HTTPNotFound(text='Kontoens mappe findes ikke')
     return root
 
-
-def catalog(root):
-    database=root / '.fotoarkiv' / 'catalog.sqlite'
-    if database.is_symlink() or database.parent.is_symlink():
-        raise web.HTTPForbidden(text='Ugyldigt katalog')
-    if not database.is_file():
-        return {}
-    with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as db:
-        return {(item,name): {'path':path,'timestamp':stamp,'albums':json.loads(albums),'date_label':date_label}
-                for item,name,path,stamp,albums,date_label in db.execute('SELECT id,name,path,timestamp,albums,date_label FROM files')}
 
 def catalog_file(root, item, name):
     database=root / '.fotoarkiv' / 'catalog.sqlite'
@@ -76,82 +64,32 @@ def media_path(request, account, item, name):
     return path
 
 
-def scan(root):
-    entries = []
-    known=catalog(root)
-    for (item,name), info in known.items():
-        path=checked_path(root,info["path"])
-        if path.is_file():
-            stat=path.stat()
-            entries.append((info["timestamp"],item,name,stat.st_size,"video" if path.suffix.lower() in VIDEOS else "image"))
-    with os.scandir(root) as folders:
-        for folder in folders:
-            if not folder.is_dir(follow_symlinks=False) or not ITEM.fullmatch(folder.name):
-                continue
-            with os.scandir(folder.path) as files:
-                for media in files:
-                    if not media.is_file(follow_symlinks=False) or media.name.startswith('.') or Path(media.name).suffix.lower() not in IMAGES | VIDEOS:
-                        continue
-                    try:
-                        stat = media.stat(follow_symlinks=False)
-                    except OSError:
-                        continue
-                    if (folder.name,media.name) in known: continue
-                    entries.append((stat.st_mtime, folder.name, media.name, stat.st_size, 'video' if Path(media.name).suffix.lower() in VIDEOS else 'image'))
-    entries.sort(reverse=True)
-    return entries
-
-
 async def listing(request):
-    account = request.query.get('account', '')
-    root = account_root(request, account)
-    now = time.monotonic()
-    cached = _cache.get(account)
-    if not cached or now - cached[0] > 30:
-        entries = await asyncio.to_thread(scan, root)
-        _cache[account] = (now, entries)
-    else:
-        entries = cached[1]
-    known=await asyncio.to_thread(catalog,root)
-    album_counts={}
-    for (item,name),info in known.items():
-        for album in info['albums']:
-            value=album_counts.setdefault(album['id'],{'id':album['id'],'title':album['title'],'count':0})
-            value['count']+=1
-    album=request.query.get('album','')
-    if album:
-        entries=[entry for entry in entries if (
-            not known.get((entry[1],entry[2]),{}).get('albums') if album=='__none__'
-            else any(a['id']==album for a in known.get((entry[1],entry[2]),{}).get('albums',[])))]
-    query = request.query.get('q', '').strip().casefold()[:100]
-    if query:
-        entries = [entry for entry in entries if query in entry[2].casefold()]
-    try:
-        page = int(request.query.get('page', '1'))
-    except ValueError:
-        raise web.HTTPBadRequest(text='Ugyldigt sidetal')
-    if page < 1 or page > 100000:
-        raise web.HTTPBadRequest(text='Ugyldigt sidetal')
-    chunk = entries[(page - 1) * PAGE_SIZE:page * PAGE_SIZE]
-    items = []
-    for modified, item, name, size, kind in chunk:
-        url = '/api/archive/file/' + '/'.join(quote(part, safe='') for part in (account, item, name))
-        thumb = '/api/archive/thumb/' + '/'.join(quote(part, safe='') for part in (account, item, name))
-        items.append({'id': item, 'name': name, 'size': size, 'kind': kind,
-                      'modified': known[(item,name)]['date_label'] if (item,name) in known else datetime.fromtimestamp(modified).strftime('%d/%m/%Y %H:%M'),
-                      'date_source': 'google' if (item,name) in known else 'download',
-                      'url': url, 'thumb': thumb if kind == 'image' else None})
-    try:
-        organization=json.loads((root/'.fotoarkiv'/'organization.json').read_text())
-    except (OSError,ValueError):
-        organization=None
-    return web.json_response({'items': items, 'total': len(entries), 'page': page, 'page_size': PAGE_SIZE,
-                              'albums':sorted(album_counts.values(),key=lambda a:a['title'].casefold()),
-                              'organization':organization})
+    account=request.query.get('account','')
+    root=account_root(request,account)
+    try: page=int(request.query.get('page','1'))
+    except ValueError:raise web.HTTPBadRequest(text='Ugyldigt sidetal')
+    if page<1 or page>100000:raise web.HTTPBadRequest(text='Ugyldigt sidetal')
+    album=request.query.get('album','')[:200]
+    search=request.query.get('q','').strip()[:100]
+    target=await request.app['archive_index'].ensure(account,root)
+    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page)
+    items=[]
+    for item,name,size,kind,label,source in rows:
+        suffix='/'.join(quote(part,safe='') for part in (account,item,name))
+        items.append({'id':item,'name':name,'size':size,'kind':kind,'modified':label,
+                      'date_source':source,'url':'/api/archive/file/'+suffix,
+                      'thumb':'/api/archive/thumb/'+suffix if kind=='image' else None})
+    def report():
+        try:return json.loads((root/'.fotoarkiv/organization.json').read_text())
+        except (OSError,ValueError):return None
+    organization=await asyncio.to_thread(report)
+    return web.json_response({'items':items,'total':total,'page':page,'page_size':PAGE_SIZE,
+                              'albums':albums,'organization':organization})
 
 
 async def file_response(request):
-    path = media_path(request, request.match_info['account'], request.match_info['item'], request.match_info['name'])
+    path = await asyncio.to_thread(media_path, request, request.match_info['account'], request.match_info['item'], request.match_info['name'])
     disposition = 'attachment' if request.query.get('download') == '1' else 'inline'
     response = web.FileResponse(path)
     response.headers['Content-Disposition'] = disposition + "; filename*=UTF-8''" + quote(path.name, safe='')
@@ -172,7 +110,7 @@ def create_thumb(source, target):
 
 
 async def thumbnail(request):
-    path = media_path(request, request.match_info['account'], request.match_info['item'], request.match_info['name'])
+    path = await asyncio.to_thread(media_path, request, request.match_info['account'], request.match_info['item'], request.match_info['name'])
     if path.suffix.lower() not in IMAGES:
         raise web.HTTPNotFound()
     stat = path.stat()
@@ -180,7 +118,9 @@ async def thumbnail(request):
     target = request.app['thumb_root'] / key / (str(stat.st_mtime_ns) + '-' + hashlib.sha256(path.name.encode('utf-8')).hexdigest()[:16] + '.jpg')
     if not target.is_file():
         try:
-            await asyncio.to_thread(create_thumb, path, target)
+            async with request.app['thumb_slots']:
+                if not target.is_file():
+                    await asyncio.to_thread(create_thumb, path, target)
         except (OSError, UnidentifiedImageError, ValueError):
             raise web.HTTPNotFound(text='Kan ikke lave miniature')
     return web.FileResponse(target, headers={'Cache-Control': 'private, max-age=86400'})
@@ -231,6 +171,11 @@ async def download_zip(request):
 
 
 def setup(app, photos_root, thumb_root, account_names, valid_token):
+    app['archive_index'] = ArchiveIndex(thumb_root.parent / 'archive-index')
+    app['thumb_slots'] = asyncio.Semaphore(3)
+    async def cleanup(app):
+        await app['archive_index'].close()
+    app.on_cleanup.append(cleanup)
     app['photos_root'] = photos_root
     app['thumb_root'] = thumb_root
     app['account_names'] = account_names

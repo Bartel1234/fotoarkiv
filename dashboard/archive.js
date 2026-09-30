@@ -62,15 +62,22 @@ function archiveRender() {
   archiveSelection();
 }
 
+let archiveRequest;
+let archiveRequestNumber=0;
 async function archiveLoad() {
   if (!archiveState.account) return;
-  archiveEl('archive-grid').textContent = 'Indlæser filer…';
+  if(archiveRequest) archiveRequest.abort();
+  archiveRequest=new AbortController();
+  const requestNumber=++archiveRequestNumber;
+  const signal=archiveRequest.signal;
+  archiveEl('archive-grid').textContent = 'Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.';
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
       q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value});
-    const response = await fetch('/api/archive?' + params, {cache: 'no-store'});
+    const response = await fetch('/api/archive?' + params, {cache: 'no-store',signal});
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
+    if(requestNumber!==archiveRequestNumber) return;
     const albumSelect=archiveEl('archive-album');
     const chosen=albumSelect.value;
     albumSelect.replaceChildren(new Option('Alle billeder og videoer',''), new Option('Uden album','__none__'));
@@ -82,6 +89,7 @@ async function archiveLoad() {
     archiveState.total = data.total;
     archiveRender();
   } catch (error) {
+    if(error.name==='AbortError' || requestNumber!==archiveRequestNumber) return;
     archiveEl('archive-grid').textContent = 'Kunne ikke hente filer.';
     archiveEl('archive-message').textContent = error.message;
   }
