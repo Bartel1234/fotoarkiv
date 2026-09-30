@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 from archive import setup as setup_archive
+from progress import progress
 
 CONTROL = Path('/control')
 PHOTOS = Path('/photos')
@@ -142,14 +143,20 @@ def account_summaries():
             online = False
         try:
             with (state / 'activity.log').open(encoding='utf-8', errors='replace') as f:
-                account_log = readable_log(''.join(deque(f, maxlen=180)))[-14000:]
+                raw_account_log = ''.join(deque(f, maxlen=180))
+                account_log = readable_log(raw_account_log)[-14000:]
         except OSError:
-            account_log = ''
+            account_log = raw_account_log = ''
         try:
             account_next_run = datetime.fromtimestamp(int(value('next-run'))).strftime('%d/%m/%Y kl. %H:%M')
         except (ValueError, OverflowError, OSError):
             account_next_run = 'Ikke planlagt'
-        result.append({'email': email, 'folder': email, 'count': count, 'bytes': size,
+        running = online and (state / 'running').exists()
+        pending = (state / 'start-request').exists()
+        stopping = (state / 'stop-request').exists()
+        login_active = read('login-active') == email
+        phase = progress(state, raw_account_log, online=online, running=running, pending=pending, stopping=stopping, login_active=login_active)
+        result.append({**phase, 'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
                        'stopping': (state / 'stop-request').exists(),
@@ -162,9 +169,10 @@ def account_summaries():
 def status():
     try:
         with (CONTROL / 'activity.log').open(encoding='utf-8', errors='replace') as f:
-            log = readable_log(''.join(deque(f, maxlen=180)))[-14000:]
+            raw_log = ''.join(deque(f, maxlen=180))
+            log = readable_log(raw_log)[-14000:]
     except OSError:
-        log = ''
+        log = raw_log = ''
     try:
         next_run = datetime.fromtimestamp(int(read('next-run'))).strftime('%d/%m/%Y kl. %H:%M')
     except (ValueError, OverflowError, OSError):
@@ -190,7 +198,8 @@ def status():
         label, tone = 'Seneste kørsel afsluttet', 'good'
     else:
         label, tone = 'Klar til første kørsel', 'pending'
-    return {**inventory(), 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
+    phase = progress(CONTROL, raw_log, online=online, running=running, pending=pending, stopping=(CONTROL / 'stop-request').exists(), login_active=read('login-active') == 'legacy')
+    return {**inventory(), **phase, 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
             'running': running, 'pending': pending, 'stopping': (CONTROL / 'stop-request').exists(), 'login_active': read('login-active') == 'legacy', 'last_run': read('last-run') or 'Ingen endnu',
             'next_run': next_run, 'last_exit': exit_code, 'started': read('running') if running else '',
             'log': log or 'Der er endnu ingen aktivitet.'}

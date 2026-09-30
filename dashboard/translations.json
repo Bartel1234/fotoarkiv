@@ -168,5 +168,19 @@
   "BACKUPSTYRING": "BACKUP CONTROL",
   "BILLEDER OG FILER": "PHOTOS AND FILES",
   "gemt på din server": "stored on your server",
-  "BACKUP STØRRELSE": "BACKUP SIZE"
+  "BACKUP STØRRELSE": "BACKUP SIZE",
+  "Forbereder backup": "Preparing backup",
+  "Indekserer billeder og albums": "Indexing photos and albums",
+  "Organiserer filer": "Organizing files",
+  "Henter billeder og videoer": "Downloading photos and videos",
+  "Afslutter login-browser": "Closing sign-in browser",
+  "Afbryder backup": "Stopping backup",
+  "Forbereder kontoens browserprofil.": "Preparing the account browser profile.",
+  "Læser billeddatoer og albumtilknytninger fra Google Fotos.": "Reading photo dates and album membership from Google Photos.",
+  "Placering og albumreferencer opdateres på serveren.": "Updating file locations and album references on the server.",
+  "Mediefiler hentes fra Google Fotos og organiseres løbende.": "Downloading media from Google Photos and organizing it as it arrives.",
+  "Venter på, at login-browseren frigiver kontoen.": "Waiting for the sign-in browser to release the account.",
+  "Venter på, at kontoens processer afsluttes.": "Waiting for this account’s processes to stop.",
+  " indekserede billeder · ": " indexed photos · ",
+  " albums": " albums"
 }

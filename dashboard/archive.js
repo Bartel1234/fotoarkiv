@@ -141,6 +141,7 @@ archiveEl('archive-organize').addEventListener('click',async()=>{
   finally {button.disabled=false;}
 });
 
+let archiveWasBusy=false;
 async function archiveRunStatus() {
   try {
     const response=await fetch('/api/status',{cache:'no-store'});
@@ -153,7 +154,10 @@ async function archiveRunStatus() {
     archiveEl('archive-stop').disabled=!!account.stopping;
     archiveEl('archive-stop').textContent=account.stopping?I18n.t('Afbryder…'):I18n.t('Afbryd backup');
     archiveEl('archive-organize').disabled=!!busy||!account.online;
-    if(busy) archiveEl('organization-status').textContent=account.stopping?I18n.t('Afbryder backup…'):account.running?I18n.t('Kontoens backup eller organisering kører.'):I18n.t('Kontoens kørsel afventer start.');
+    const phase=I18n.phase(account);
+    if(archiveWasBusy && !busy) archiveLoad();
+    archiveWasBusy=!!busy;
+    if(busy) archiveEl('organization-status').textContent=phase ? phase.title + ' · ' + phase.detail : account.stopping?I18n.t('Afbryder backup…'):account.running?I18n.t('Kontoens backup eller organisering kører.'):I18n.t('Kontoens kørsel afventer start.');
   } catch (_) {}
 }
 archiveEl('archive-stop').addEventListener('click',async()=>{

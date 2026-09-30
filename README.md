@@ -25,6 +25,7 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 
 ## Accounts and operation
 
+- The status panel and account cards follow the current stage: preparation, closing sign-in, indexing photos/albums, organizing files, downloading media and stopping. During Google indexing, the panel shows the latest indexed photo and album counts rather than an estimated percentage.
 - The dashboard refreshes every eight seconds and shows worker availability, file counts, storage usage, recent files, schedules and activity. Select an account card to view its status and log.
 - The **Existing account** keeps its original profile and files in the main backup folder. Additional accounts use folders such as `BACKUP_DIR/user@example.com`. Only add the original account again if you want a separate download starting from the beginning.
 - `APPDATA_DIR/chrome` and the account browser profiles contain Google sign-in credentials. Keep them private.

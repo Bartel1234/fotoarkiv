@@ -29,5 +29,23 @@ const I18n = (() => {
   }
   document.querySelectorAll('[data-language]').forEach(button => button.addEventListener('click', () => set(button.dataset.language)));
   apply();
-  return {t, locale: () => language === 'da' ? 'da-DK' : 'en-GB', set};
+  function phase(account) {
+    const stages = {
+      starting: ['Forbereder backup', 'Forbereder kontoens browserprofil.'],
+      waiting_login: ['Afslutter login-browser', 'Venter på, at login-browseren frigiver kontoen.'],
+      indexing: ['Indekserer billeder og albums', 'Læser billeddatoer og albumtilknytninger fra Google Fotos.'],
+      organizing: ['Organiserer filer', 'Placering og albumreferencer opdateres på serveren.'],
+      downloading: ['Henter billeder og videoer', 'Mediefiler hentes fra Google Fotos og organiseres løbende.'],
+      stopping: ['Afbryder backup', 'Venter på, at kontoens processer afsluttes.']
+    };
+    const stage = stages[account.phase];
+    if (!stage) return null;
+    let detail = t(stage[1]);
+    if (account.phase === 'indexing' && Number.isInteger(account.indexed_items)) {
+      const format = n => new Intl.NumberFormat(language === 'da' ? 'da-DK' : 'en-GB').format(n);
+      detail = format(account.indexed_items) + t(' indekserede billeder · ') + format(account.indexed_albums || 0) + t(' albums');
+    }
+    return {title: t(stage[0]), detail};
+  }
+  return {t, phase, locale: () => language === 'da' ? 'da-DK' : 'en-GB', set};
 })();

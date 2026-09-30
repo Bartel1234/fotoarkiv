@@ -10,14 +10,15 @@ async function refresh() {
     if (!response.ok) throw new Error(I18n.t('Kunne ikke hente status (') + response.status + ')');
     const s = await response.json();
     if (number !== refreshNumber) return;
-    const active = (s.accounts || []).find(a => a.email === selectedAccount) || (s.accounts || [])[0];
+    const active = selectedAccount === 'legacy' ? null : (s.accounts || []).find(a => a.email === selectedAccount) || (s.accounts || [])[0];
     if (active) selectedAccount = active.email;
     const view = active || s;
-    const label = active ? active.running ? I18n.t('Synkroniserer') + ' ' + active.email : !active.online ? I18n.t('Konto offline: ') + active.email : active.pending ? I18n.t('Starter ') + active.email : active.last_exit === '130' ? I18n.t('Backup afbrudt: ') + active.email : active.last_exit && active.last_exit !== '0' ? I18n.t('Backup fejlede: ') + active.email : I18n.t('Klar: ') + active.email : s.label;
+    const phase = I18n.phase(view);
+    const label = phase ? phase.title + (active ? " · " + active.email : "") : active ? active.running ? I18n.t('Synkroniserer') + ' ' + active.email : !active.online ? I18n.t('Konto offline: ') + active.email : active.pending ? I18n.t('Starter ') + active.email : active.last_exit === '130' ? I18n.t('Backup afbrudt: ') + active.email : active.last_exit && active.last_exit !== '0' ? I18n.t('Backup fejlede: ') + active.email : I18n.t('Klar: ') + active.email : s.label;
     const tone = active ? !active.online || (active.last_exit && active.last_exit !== '0' && active.last_exit !== '130' && !active.running) ? 'error' : active.running ? 'active' : 'pending' : s.tone;
     el('status').textContent = label;
     el('status').dataset.tone = tone;
-    el('status-detail').textContent = view.running ? I18n.t('Backup kører. Nye filer vises herunder, mens de hentes.') : view.pending ? I18n.t('Anmodningen er sendt. Synkroniseringen starter om lidt.') : tone === 'error' ? I18n.t('Se aktivitetsloggen for fejlen og kontrollér Google-login.') : I18n.t('Dine billeder bliver gemt lokalt på din Unraid-server.');
+    el('status-detail').textContent = phase ? phase.detail : view.running ? I18n.t('Backup kører. Nye filer vises herunder, mens de hentes.') : view.pending ? I18n.t('Anmodningen er sendt. Synkroniseringen starter om lidt.') : tone === 'error' ? I18n.t('Se aktivitetsloggen for fejlen og kontrollér Google-login.') : I18n.t('Dine billeder bliver gemt lokalt på din Unraid-server.');
     el('count').textContent = fmt(s.count);
     el('used').textContent = human(s.bytes);
     el('last-run').textContent = view.last_run;
@@ -25,8 +26,8 @@ async function refresh() {
     el('next-run').textContent = view.next_run;
     el('activity-badge').textContent = view.running ? I18n.t('● KØRER') : view.online ? '● LIVE' : '● OFFLINE';
     el('activity-badge').className = 'badge ' + tone;
-    el('start').disabled = view.running || view.pending || !view.online;
-    el('start').textContent = view.running ? I18n.t('Synkroniserer…') : view.pending ? I18n.t('Starter snart…') : I18n.t('↻   Start backup nu');
+    el('start').disabled = view.running || view.pending || view.stopping || !view.online;
+    el('start').textContent = phase ? phase.title + '…' : view.running ? I18n.t('Synkroniserer…') : view.pending ? I18n.t('Starter snart…') : I18n.t('↻   Start backup nu');
     el('log').textContent = view.log;
     const list = el('recent');
     list.replaceChildren();
@@ -95,7 +96,7 @@ function actionButton(label, account, action) {
 function renderAccounts(accounts, summary) {
   const list = el('account-list');
   list.replaceChildren();
-  const legacy = {email: 'legacy', folder: I18n.t('Hovedmappen (eksisterende konto)'), count: null, bytes: null,
+  const legacy = {...summary, email: 'legacy', folder: I18n.t('Hovedmappen (eksisterende konto)'), count: null, bytes: null,
                   online: summary.online, running: summary.running, pending: summary.pending, stopping: summary.stopping, login_active: summary.login_active, last_run: summary.last_run};
   for (const account of [legacy, ...accounts]) {
     const card = document.createElement('div'); card.className = 'account-card';
@@ -106,13 +107,14 @@ function renderAccounts(accounts, summary) {
     });
     const detail = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = account.email === 'legacy' ? I18n.t('Eksisterende konto') : account.email;
+    const phase = I18n.phase(account);
     const info = document.createElement('small');
-    info.textContent = (account.online ? account.running ? I18n.t('Synkroniserer') : account.pending ? I18n.t('Afventer start') : I18n.t('Klar') : 'Offline') +
+    info.textContent = (phase ? phase.title : account.online ? account.running ? I18n.t('Synkroniserer') : account.pending ? I18n.t('Afventer start') : I18n.t('Klar') : 'Offline') +
       ' · ' + account.folder + (account.count === null ? '' : ' · ' + fmt(account.count) + I18n.t(' filer / ') + human(account.bytes));
     detail.append(title, info);
     const controls = document.createElement('div'); controls.className = 'account-actions';
-    const startButton = actionButton(account.running ? I18n.t('Synkroniserer…') : account.pending ? I18n.t('Starter snart…') : I18n.t('Start backup'), account.email, 'start');
-    startButton.disabled = account.running || account.pending || !account.online;
+    const startButton = actionButton(phase ? phase.title + '…' : account.running ? I18n.t('Synkroniserer…') : account.pending ? I18n.t('Starter snart…') : I18n.t('Start backup'), account.email, 'start');
+    startButton.disabled = account.running || account.pending || account.stopping || !account.online;
     controls.append(actionButton(I18n.t('Google-login ↗'), account.email, 'login'), startButton, actionButton(I18n.t('Gennemgå hele arkivet'), account.email, 'rescan'));
     const browse = document.createElement('button');
     browse.type = 'button'; browse.className = 'outline'; browse.textContent = I18n.t('Se billeder og videoer');
@@ -131,7 +133,7 @@ function renderAccounts(accounts, summary) {
     feedback.className = 'account-feedback';
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
-    feedback.textContent = account.stopping ? I18n.t('◷ Afbryder backup – venter på at processerne lukker.') : account.running ? I18n.t('● Backup kører nu – nye filer vises i overblikket.') : account.pending ? account.login_active ? I18n.t('◷ Afslutter login-browseren før backup…') : I18n.t('◷ Start er bestilt – venter på synkroniseringsmotoren.') : account.login_active ? I18n.t('Login-browseren er åben. Start backup lukker den automatisk.') : '';
+    feedback.textContent = phase ? phase.detail : account.stopping ? I18n.t('◷ Afbryder backup – venter på at processerne lukker.') : account.running ? I18n.t('● Backup kører nu – nye filer vises i overblikket.') : account.pending ? account.login_active ? I18n.t('◷ Afslutter login-browseren før backup…') : I18n.t('◷ Start er bestilt – venter på synkroniseringsmotoren.') : account.login_active ? I18n.t('Login-browseren er åben. Start backup lukker den automatisk.') : '';
     card.append(detail, controls, feedback);
     list.append(card);
   }
