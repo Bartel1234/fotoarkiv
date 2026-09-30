@@ -44,7 +44,7 @@ function archiveRender() {
     }
     preview.addEventListener('click', () => archivePreview(item));
     const name = document.createElement('strong'); name.textContent = item.name; name.title = item.name;
-    const meta = document.createElement('small'); meta.textContent = archiveSize(item.size) + ' · hentet ' + item.modified;
+    const meta = document.createElement('small'); meta.textContent = archiveSize(item.size) + ' · ' + (item.date_source === 'google' ? 'Google-dato ' : 'hentet ') + item.modified;
     const label = document.createElement('label'); label.className = 'archive-check';
     const check = document.createElement('input'); check.type = 'checkbox'; check.checked = archiveState.selected.has(archiveKey(item));
     check.addEventListener('change', () => {
@@ -67,10 +67,17 @@ async function archiveLoad() {
   archiveEl('archive-grid').textContent = 'Indlæser filer…';
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
-      q: archiveEl('archive-search').value.trim()});
+      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value});
     const response = await fetch('/api/archive?' + params, {cache: 'no-store'});
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
+    const albumSelect=archiveEl('archive-album');
+    const chosen=albumSelect.value;
+    albumSelect.replaceChildren(new Option('Alle billeder og videoer',''), new Option('Uden album','__none__'));
+    for(const album of data.albums || []) albumSelect.append(new Option(album.title+' ('+album.count+')',album.id));
+    albumSelect.value=chosen;
+    const org=data.organization;
+    archiveEl('organization-status').textContent=org ? 'Senest organiseret: '+org.updated+(org.missing_metadata ? ' · '+org.missing_metadata+' filer uden Google-metadata' : '')+(org.copies ? ' · '+org.copies+' albumkopier (hardlink ikke muligt)' : '') : 'Filerne er endnu ikke organiseret.';
     archiveState.items = data.items;
     archiveState.total = data.total;
     archiveRender();
@@ -112,3 +119,16 @@ archiveEl('archive-zip').addEventListener('click', () => {
   archiveEl('archive-message').textContent = 'ZIP-download er startet. Filerne pakkes, mens de sendes til browseren.';
 });
 archiveInit();
+
+archiveEl('archive-album').addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
+archiveEl('archive-organize').addEventListener('click',async()=>{
+  const button=archiveEl('archive-organize');button.disabled=true;
+  try {
+    const response=await fetch('/api/accounts/'+encodeURIComponent(archiveState.account)+'/organize',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token:archiveEl('archive-token').value})});
+    if(!response.ok) throw Error(await response.text());
+    archiveEl('organization-status').textContent='Organisering bestilt. Følg fremdriften i kontoens aktivitetslog.';
+  } catch(e) {archiveEl('organization-status').textContent=e.message;}
+  finally {button.disabled=false;}
+});

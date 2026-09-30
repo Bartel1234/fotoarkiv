@@ -5,6 +5,7 @@ import re
 import json
 import hashlib
 import time
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -31,12 +32,43 @@ def account_root(request, account):
     return root
 
 
+def catalog(root):
+    database=root / '.fotoarkiv' / 'catalog.sqlite'
+    if database.is_symlink() or database.parent.is_symlink():
+        raise web.HTTPForbidden(text='Ugyldigt katalog')
+    if not database.is_file():
+        return {}
+    with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as db:
+        return {(item,name): {'path':path,'timestamp':stamp,'albums':json.loads(albums),'date_label':date_label}
+                for item,name,path,stamp,albums,date_label in db.execute('SELECT id,name,path,timestamp,albums,date_label FROM files')}
+
+def catalog_file(root, item, name):
+    database=root / '.fotoarkiv' / 'catalog.sqlite'
+    if database.is_symlink() or database.parent.is_symlink():
+        raise web.HTTPForbidden(text='Ugyldigt katalog')
+    if not database.is_file(): return None
+    with sqlite3.connect(database.as_uri() + '?mode=ro',uri=True) as db:
+        row=db.execute('SELECT path FROM files WHERE id=? AND name=?',(item,name)).fetchone()
+    return row[0] if row else None
+
+def checked_path(root, relative):
+    path=root / relative
+    if not path.is_relative_to(root): raise web.HTTPForbidden()
+    parent=path
+    while parent != root:
+        if parent.is_symlink(): raise web.HTTPForbidden()
+        parent=parent.parent
+    if not path.resolve().is_relative_to(root.resolve()): raise web.HTTPForbidden()
+    return path
+
+
 def media_path(request, account, item, name):
     root = account_root(request, account)
     if not isinstance(item, str) or not isinstance(name, str) or not ITEM.fullmatch(item) or not name or name.startswith('.') or name != Path(name).name or '/' in name or '\\' in name:
         raise web.HTTPBadRequest(text='Ugyldig fil')
-    folder = root / item
-    path = folder / name
+    mapped=catalog_file(root,item,name)
+    path=checked_path(root,mapped) if mapped else root / item / name
+    folder=path.parent
     if folder.is_symlink() or path.is_symlink() or not path.is_file():
         raise web.HTTPNotFound(text='Filen findes ikke')
     if path.suffix.lower() not in IMAGES | VIDEOS or not path.resolve().is_relative_to(root.resolve()):
@@ -46,6 +78,12 @@ def media_path(request, account, item, name):
 
 def scan(root):
     entries = []
+    known=catalog(root)
+    for (item,name), info in known.items():
+        path=checked_path(root,info["path"])
+        if path.is_file():
+            stat=path.stat()
+            entries.append((info["timestamp"],item,name,stat.st_size,"video" if path.suffix.lower() in VIDEOS else "image"))
     with os.scandir(root) as folders:
         for folder in folders:
             if not folder.is_dir(follow_symlinks=False) or not ITEM.fullmatch(folder.name):
@@ -58,6 +96,7 @@ def scan(root):
                         stat = media.stat(follow_symlinks=False)
                     except OSError:
                         continue
+                    if (folder.name,media.name) in known: continue
                     entries.append((stat.st_mtime, folder.name, media.name, stat.st_size, 'video' if Path(media.name).suffix.lower() in VIDEOS else 'image'))
     entries.sort(reverse=True)
     return entries
@@ -73,6 +112,17 @@ async def listing(request):
         _cache[account] = (now, entries)
     else:
         entries = cached[1]
+    known=await asyncio.to_thread(catalog,root)
+    album_counts={}
+    for (item,name),info in known.items():
+        for album in info['albums']:
+            value=album_counts.setdefault(album['id'],{'id':album['id'],'title':album['title'],'count':0})
+            value['count']+=1
+    album=request.query.get('album','')
+    if album:
+        entries=[entry for entry in entries if (
+            not known.get((entry[1],entry[2]),{}).get('albums') if album=='__none__'
+            else any(a['id']==album for a in known.get((entry[1],entry[2]),{}).get('albums',[])))]
     query = request.query.get('q', '').strip().casefold()[:100]
     if query:
         entries = [entry for entry in entries if query in entry[2].casefold()]
@@ -88,9 +138,16 @@ async def listing(request):
         url = '/api/archive/file/' + '/'.join(quote(part, safe='') for part in (account, item, name))
         thumb = '/api/archive/thumb/' + '/'.join(quote(part, safe='') for part in (account, item, name))
         items.append({'id': item, 'name': name, 'size': size, 'kind': kind,
-                      'modified': datetime.fromtimestamp(modified).strftime('%d/%m/%Y %H:%M'),
+                      'modified': known[(item,name)]['date_label'] if (item,name) in known else datetime.fromtimestamp(modified).strftime('%d/%m/%Y %H:%M'),
+                      'date_source': 'google' if (item,name) in known else 'download',
                       'url': url, 'thumb': thumb if kind == 'image' else None})
-    return web.json_response({'items': items, 'total': len(entries), 'page': page, 'page_size': PAGE_SIZE})
+    try:
+        organization=json.loads((root/'.fotoarkiv'/'organization.json').read_text())
+    except (OSError,ValueError):
+        organization=None
+    return web.json_response({'items': items, 'total': len(entries), 'page': page, 'page_size': PAGE_SIZE,
+                              'albums':sorted(album_counts.values(),key=lambda a:a['title'].casefold()),
+                              'organization':organization})
 
 
 async def file_response(request):
@@ -154,10 +211,10 @@ async def download_zip(request):
         total += path.stat().st_size
         if total > MAX_ZIP_BYTES:
             raise web.HTTPBadRequest(text='Vælg højst 10 GB ad gangen')
-        selected.append((path, entry['id']))
+        selected.append((path, str(path.relative_to(account_root(request,account)))))
     zip_file = ZipStream(compress_type=ZIP_STORED)
     for path, item in selected:
-        zip_file.add_path(path, item + '/' + path.name)
+        zip_file.add_path(path, item)
     response = web.StreamResponse(headers={
         'Content-Type': 'application/zip',
         'Content-Disposition': 'attachment; filename="fotoarkiv-udvalg.zip"',

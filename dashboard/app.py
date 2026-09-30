@@ -55,7 +55,8 @@ def inventory():
     if now - _cache['at'] < 20:
         return _cache['data']
     count, size, recent = 0, 0, []
-    for root, _, files in os.walk(PHOTOS):
+    for root, dirs, files in os.walk(PHOTOS):
+        dirs[:] = [d for d in dirs if d not in ("Albums", ".fotoarkiv") and not (Path(root) / d).is_symlink()]
         for name in files:
             if name.startswith('.') or name.endswith(('.crdownload', '.part', '.tmp')):
                 continue
@@ -96,7 +97,8 @@ def account_summaries():
         counts = {}
         for email in account_names():
             count = size = 0
-            for root, _, files in os.walk(PHOTOS / email):
+            for root, dirs, files in os.walk(PHOTOS / email):
+                dirs[:] = [d for d in dirs if d not in ("Albums", ".fotoarkiv") and not (Path(root) / d).is_symlink()]
                 for file in files:
                     if file.startswith('.') or file.endswith(('.crdownload', '.part', '.tmp')):
                         continue
@@ -268,8 +270,12 @@ async def account_action(request):
             (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
     elif action == 'close-login':
         request_login_close(email)
-    elif action in ('start', 'rescan'):
+    elif action in ('start', 'rescan', 'organize'):
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+        if action == 'organize':
+            if (state / 'running').exists():
+                raise web.HTTPConflict(text='Vent til den aktuelle backup er afsluttet')
+            (state / 'organize-request').write_text(str(int(time.time())), encoding='utf-8')
         if action == 'rescan':
             if (state / 'running').exists():
                 raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
@@ -347,7 +353,7 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js|archive.js}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)

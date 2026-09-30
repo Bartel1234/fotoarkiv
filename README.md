@@ -40,7 +40,7 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
 
 Google tilbyder ikke en officiel API til denne type komplet, automatisk backup. Værktøjet styrer derfor webinterfacet og kan holde op med at virke, hvis Google ændrer login eller siden. Der er ingen garanti for, at det virker med din konto, før første synkronisering er afprøvet.
 
-`gphotos-cdp` synkroniserer hovedbiblioteket. Fotos, som kun findes i Arkiv, og albumstruktur er ikke understøttet. Det sletter ikke fra Google Fotos. Sørg for en separat backup af Unraid-mappen og kontrollér konkrete billeder/videoer efter første kørsel.
+`gphotos-cdp` synkroniserer hovedbiblioteket. Filer, som kun findes i Arkiv eller i delte albums og ikke i hovedbiblioteket, bliver endnu ikke downloadet. Albumindekseringen læser også deres metadata, men albummapper indeholder kun de filer, der er hentet lokalt. Det sletter ikke fra Google Fotos. Sørg for en separat backup af Unraid-mappen og kontrollér konkrete billeder/videoer efter første kørsel.
 
 Kørselsplanen er daglig og forsøger igen efter fejl. Ændring af `SYNC_HOUR` kræver genstart af `sync`-containeren og får virkning efter næste kørsel. Flere konti kan synkronisere samtidig og bruge betydelig CPU, disk og netværk.
 
@@ -52,10 +52,53 @@ Syncmotoren venter nu på, at Google Fotos indlæser tidslinjen, og stopper med 
 
 ## Visning og download af lokale filer
 
-Åbn **Mine filer** i portalen på port 8787. Vælg konto, søg efter filnavn, blad gennem miniaturebillederne, og klik på et billede eller en video for at se den i browseren. **Hent fil** gemmer et enkelt originalt medie. Markér flere filer og vælg **Hent valgte som ZIP** for en lokal kopi. ZIP streames direkte til browseren uden en ekstra fuld ZIP-kopi på Unraid; der kan vælges højst 500 filer og 10 GB pr. download. Store biblioteker kan hentes i flere portioner.
+Åbn **Se billeder og videoer** ud for kontoen i portalen på port 8787. Arkivet har sin egen side pr. konto. Vælg eventuelt et album, søg efter filnavn, blad gennem miniaturebillederne, og klik på et billede eller en video for at se den i browseren. **Hent fil** gemmer et enkelt originalt medie. Markér flere filer og vælg **Hent valgte som ZIP** for en lokal kopi. ZIP streames direkte til browseren uden en ekstra fuld ZIP-kopi på Unraid; der kan vælges højst 500 filer og 10 GB pr. download. Store biblioteker kan hentes i flere portioner.
 
 Arkivvisningen læser kun filerne under `BACKUP_DIR` og uploader intet til Google. Browseren kan ikke vise alle billed- og videoformater; en fil kan stadig hentes med **Hent fil**. Miniaturebilleder gemmes under `APPDATA_DIR/control/thumbnails`. Portalen kræver sin adgangskode også for visning og downloads; udgiv ikke port 8787 direkte på internettet.
 
 ## Afslut login fra portalen
 
 **Start backup** afslutter automatisk kontoens login-browser og venter på, at Chrome er lukket, før samme profil bruges til synkronisering. **Afslut login** lukker en åben session uden at starte backup. Gentagne klik på Google-login for samme åbne konto opretter ikke flere loginanmodninger. Kontoen og den gemte Google-session bevares.
+
+## Albums, datoer og mappeorganisering
+
+Ved backup læses Google Fotos' albumoversigt og billeddatoer gennem kontoens gemte browserprofil. Det er en uofficiel, læsende webprotokol; den ændrer ikke albums eller billeder hos Google. Protokolfelterne er undersøgt i [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) og [responsformatet](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkivs implementering er selvstændig og bruger kun læsemetoderne lcxiM, Z5xsfc og snAcKc.
+
+Lokalt får hver konto denne struktur:
+
+- `Bibliotek/År/Måned/originalnavn--Google-id.ext`: én hovedfil pr. downloadet medie. Google-id forhindrer sammenblanding af ens filnavne.
+- `Albums/Albumnavn--album-id/originalnavn--Google-id.ext`: alle lokalt hentede medlemmer af albummet. Mappenavnet bruger en kort hash af album-id for at skelne albums med samme navn.
+- `.fotoarkiv/`: albumindeks, SQLite-filregister og oplysninger til at springe allerede organiserede downloads over.
+
+Filer får ændringsdato fra Googles billeddato (ikke hentetidspunktet). År/måned og arkivets viste dato tager højde for den tidszone, som Google returnerer. EXIF-data og mediefilernes indhold ændres ikke. Serverens filoprettelsesdato kan ikke generelt sættes til Googles dato.
+
+Eksisterende Google-id-mapper omorganiseres automatisk før og efter backup, når et komplet albumindeks er hentet. **Opdater albums og organiser filer** på kontoens billedside kan bestille omorganisering uden at hente mediefiler igen. Vent til en igangværende backup er afsluttet. Fremdriften vises i kontoens aktivitetslog.
+
+Hardlinks bruges, hvor filsystemet tillader det. På Unraid kan filer på forskellige diske kræve en verificeret kopi; status angiver antallet af registrerede albumkopier. Albummapper kan derfor kræve ekstra plads. Nye downloads organiseres løbende efter hver fil, så der ikke ophobes en Google-id-mappe pr. billede. Statistikken tæller kun hovedfiler, ikke albumreferencer. Eksisterende albumfiler slettes ikke, hvis et album senere fjernes eller omdøbes hos Google; dette er et bevarende backuparkiv.
+
+Migrationen gemmer filregisteret før den gamle fil fjernes, afviser symlinks og stopper ved filkonflikter. En afbrudt kørsel kan genoptages. Filer uden matchende Google-metadata bliver i deres gamle mappe og vises stadig i arkivet. Et afbrudt eller fejlet metadataindeks erstatter ikke det sidste komplette indeks. Hold en separat backup af serverens filer før store omorganiseringer.
+
+## Opdater eksisterende installation på Unraid
+
+Installationen fra ZIP/tar er ikke et git-checkout. Brug følgende i Unraid-terminalen. Kommandoen bevarer `.env`, appdata og downloadede medier:
+
+```sh
+(
+set -e
+cd /mnt/user/appdata/fotoarkiv-projekt
+update_dir=$(mktemp -d)
+trap 'rm -rf "$update_dir"' EXIT
+curl -fL https://github.com/Bartel1234/fotoarkiv/archive/refs/heads/main.tar.gz -o "$update_dir/source.tar.gz"
+tar -xzf "$update_dir/source.tar.gz" -C "$update_dir"
+docker compose stop sync login
+cp -a "$update_dir/fotoarkiv-main/dashboard/." ./dashboard/
+cp -a "$update_dir/fotoarkiv-main/login/." ./login/
+cp "$update_dir/fotoarkiv-main/worker.sh" ./worker.sh
+cp "$update_dir/fotoarkiv-main/account-worker.sh" ./account-worker.sh
+cp "$update_dir/fotoarkiv-main/compose.yaml" ./compose.yaml
+docker compose build sync dashboard
+docker compose up -d --no-deps --force-recreate sync login dashboard
+)
+```
+
+Efter opdatering: genindlæs portalen og åbn kontoens billedside. Vælg **Opdater albums og organiser filer**, eller start backup. Første organisering kan tage tid, især hvis hardlinks ikke er mulige. Login kræves kun igen, hvis den gemte Google-session er udløbet.

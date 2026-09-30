@@ -1,11 +1,9 @@
-FROM golang:alpine AS sync-binaries
-RUN apk add --no-cache git \
-    && git clone https://github.com/perkeep/gphotos-cdp.git /src/gphotos-cdp \
-    && cd /src/gphotos-cdp \
-    && git checkout e9d1979707191993f1c879ae93f8dd810697fd6e
-COPY gphotos-cdp-main.go /src/gphotos-cdp/main.go
-RUN cd /src/gphotos-cdp && CGO_ENABLED=0 go build -o /go/bin/gphotos-cdp .
-
+FROM golang:1.26-alpine AS sync-binaries
+WORKDIR /src/gphotos-cdp
+COPY go.mod go.sum ./
+RUN go mod download
+COPY gphotos-cdp-main.go ./main.go
+RUN CGO_ENABLED=0 go build -buildvcs=false -mod=readonly -o /go/bin/gphotos-cdp .
 FROM dorowu/ubuntu-desktop-lxde-vnc:latest
 
 # The base image ships Chrome 89 and an obsolete Google APT signing key.
@@ -23,3 +21,9 @@ RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome --no-sandbox "$@"\n' > /usr/l
 COPY --from=sync-binaries /go/bin/gphotos-cdp /usr/local/bin/gphotos-cdp
 RUN gphotos-cdp -h >/dev/null 2>&1 || test "$?" -eq 2
 COPY fotoarkiv-supervisor.conf /etc/supervisor/conf.d/fotoarkiv.conf
+
+COPY organize.py /usr/local/bin/fotoarkiv-organize.py
+RUN python3 --version
+
+COPY organize-one.sh /usr/local/bin/fotoarkiv-organize-one
+RUN chmod +x /usr/local/bin/fotoarkiv-organize-one

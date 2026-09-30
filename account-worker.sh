@@ -10,7 +10,25 @@ else
   destination="/download/$account"
   profile_tmp="/accounts/$account"
 fi
-run_sync() { TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -dldir "$destination"; }
+run_sync() {
+  echo "Henter albums og Google-datoer"
+  if TMPDIR="$profile_tmp" gphotos-cdp -dev -headless -index-albums -dldir "$destination"; then
+    if ! python3 /usr/local/bin/fotoarkiv-organize.py "$destination"; then
+      echo "FEJL: Organisering afbrudt; originalfiler bevares"
+      return 1
+    fi
+  else
+    echo "FEJL: Kunne ikke opdatere albumindeks. Tidligere indeks og filer bevares."
+    if [ "$organize_only" = 1 ]; then return 1; fi
+  fi
+  if [ "$organize_only" = 1 ]; then return 0; fi
+  TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -run /usr/local/bin/fotoarkiv-organize-one -dldir "$destination"
+  download_result=$?
+  if [ -f "$destination/.fotoarkiv/metadata.json" ]; then
+    python3 /usr/local/bin/fotoarkiv-organize.py "$destination" || return 1
+  fi
+  return "$download_result"
+}
 mkdir -p "$state" "$destination" "$profile_tmp/gphotos-cdp"
 NEXT="$state/next-run"
 REQUEST="$state/start-request"
@@ -25,6 +43,8 @@ while :; do
   DUE=$(cat "$NEXT" 2>/dev/null || echo 0)
   case "$DUE" in *[!0-9]*|'') DUE=0;; esac
   if [ -f "$REQUEST" ] || [ "$NOW" -ge "$DUE" ]; then
+    organize_only=0
+    if [ -f "$state/organize-request" ]; then organize_only=1; rm -f "$state/organize-request"; fi
     rm -f "$REQUEST"
     while [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
       echo "$(date '+%Y-%m-%d %H:%M:%S') Venter på at login-browseren lukkes: $account" >> "$LOG"

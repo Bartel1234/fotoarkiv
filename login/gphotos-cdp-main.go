@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -52,6 +53,8 @@ var (
 	headlessFlag = flag.Bool("headless", false, "Start chrome browser in headless mode (cannot do authentication this way).")
 )
 
+var indexFlag = flag.Bool("index-albums", false, "Read Google album and date metadata without downloading")
+
 var tick = 500 * time.Millisecond
 
 func main() {
@@ -73,10 +76,12 @@ func main() {
 
 	log.Printf("Session Dir: %v", s.profileDir)
 
-	if err := s.cleanDlDir(); err != nil {
-		log.Fatal(err)
-	}
+	if !*indexFlag {
+		if err := s.cleanDlDir(); err != nil {
+			log.Fatal(err)
+		}
 
+	}
 	ctx, cancel := s.NewContext()
 	defer cancel()
 
@@ -84,6 +89,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if *indexFlag {
+		if err := s.indexAlbums(ctx); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := chromedp.Run(ctx,
 		chromedp.ActionFunc(s.firstNav),
 		chromedp.ActionFunc(s.navN(*nItemsFlag)),
@@ -101,7 +112,8 @@ type Session struct {
 	// lastDone is the most recent (wrt to Google Photos timeline) item (its URL
 	// really) that was downloaded. If set, it is used as a sentinel, to indicate that
 	// we should skip dowloading all items older than this one.
-	lastDone string
+	lastDone   string
+	downloaded map[string][]string
 	// firstItem is the most recent item in the feed. It is determined at the
 	// beginning of the run, and is used as the final sentinel.
 	firstItem string
@@ -150,6 +162,8 @@ func NewSession() (*Session, error) {
 		dlDir:      dlDir,
 		lastDone:   lastDone,
 	}
+	data, _ := ioutil.ReadFile(filepath.Join(dlDir, ".fotoarkiv", "downloaded.json"))
+	json.Unmarshal(data, &s.downloaded)
 	return s, nil
 }
 
@@ -613,6 +627,29 @@ func (s *Session) moveDownload(ctx context.Context, dlFile, location string) (st
 }
 
 func (s *Session) dlAndMove(ctx context.Context, location string) (string, error) {
+	item := location[strings.LastIndex(location, "/")+1:]
+	paths := s.downloaded[item]
+	if len(paths) > 0 {
+		allExist := true
+		for _, relative := range paths {
+			clean := filepath.Clean(relative)
+			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
+				allExist = false
+				break
+			}
+			st, err := os.Stat(filepath.Join(s.dlDir, clean))
+			if err != nil || !st.Mode().IsRegular() {
+				allExist = false
+				break
+			}
+		}
+		if allExist {
+			if err := markDone(s.dlDir, location); err != nil {
+				return "", err
+			}
+			return filepath.Join(s.dlDir, paths[0]), nil
+		}
+	}
 	dlFile, err := s.download(ctx, location)
 	if err != nil {
 		return "", err
@@ -694,4 +731,61 @@ func (s *Session) navN(N int) func(context.Context) error {
 		}
 		return nil
 	}
+}
+
+func (s *Session) indexAlbums(ctx context.Context) error {
+	var ready bool
+	for n := 0; n < 60; n++ {
+		if err := chromedp.Run(ctx, chromedp.Evaluate("!!(window.WIZ_global_data && window.WIZ_global_data.SNlM0e)", &ready)); err != nil {
+			return err
+		}
+		if ready {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if !ready {
+		return errors.New("Google metadata not ready")
+	}
+	var started bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate("(() => {\nwindow.__fotoIndex = {state:'running',progress:'Starter'};\n(async function() {\nconst g=window.WIZ_global_data;\nif(!g || !g.SNlM0e || !g.eptZe) throw Error('Google loginoplysninger mangler');\nasync function rpc(id, data) {\n  let last;\n  for(let n=0;n<3;n++) {\n    try {\n      const q=new URLSearchParams({rpcids:id,'source-path':location.pathname,'f.sid':g.FdrFJe,bl:g.cfb2h,rt:'c'});\n      const body=new URLSearchParams({'f.req':JSON.stringify([[[id,JSON.stringify(data),null,'generic']]]),at:g.SNlM0e});\n      const r=await fetch(g.eptZe+'data/batchexecute?'+q,{method:'POST',credentials:'include',body});\n      if(!r.ok) throw Error('Google HTTP '+r.status);\n      for(const line of (await r.text()).split('\\n')) {\n        if(!line.includes('wrb.fr')) continue;\n        const rows=JSON.parse(line);\n        for(const row of rows) if(row[0]==='wrb.fr' && row[1]===id && row[2]) return JSON.parse(row[2]);\n      }\n      throw Error('Uventet svar fra Google: '+id);\n    } catch(e) {last=e; await new Promise(r=>setTimeout(r,1000*(n+1)));}\n  }\n  throw last;\n}\nconst out={version:1,complete:false,updated:new Date().toISOString(),items:{},albums:{}};\nconst byDedup=new Map();\nfunction media(row, album) {\n  if(!Array.isArray(row) || typeof row[0]!=='string' || !/^AF1Q[A-Za-z0-9_-]+$/.test(row[0])) throw Error('Uventet billed-id');\n  const ts=Number(row[2]), offset=Number(row[4]||0);\n  if(!Number.isFinite(ts) || ts<=0 || !Number.isFinite(offset) || Math.abs(offset)>86400) throw Error('Ugyldig Google-dato');\n  const key=album && typeof row[3]==='string' && byDedup.has(row[3]) ? byDedup.get(row[3]) : row[0];\n  const item=out.items[key]||(out.items[key]={timestamp:ts,offset:offset,albums:[]});\n  if(!album && typeof row[3]==='string') byDedup.set(row[3],key);\n  if(album && !item.albums.includes(album)) item.albums.push(album);\n}\nasync function pages(id, args, rowsAt, nextAt, consume) {\n  let page=null;const seen=new Set();\n  for(let n=0;n<10000;n++) {\n    const data=await rpc(id,args(page));\n    if(!Array.isArray(data) || (data[rowsAt]!=null && !Array.isArray(data[rowsAt]))) throw Error('Uventet sidelayout '+id);\n    for(const row of data[rowsAt]||[]) consume(row);\n    window.__fotoIndex.progress=Object.keys(out.items).length+' billeder, '+Object.keys(out.albums).length+' albums';\n    page=data[nextAt];if(!page) return;\n    if(typeof page!=='string'||seen.has(page)) throw Error('Gentaget Google-side');\n    seen.add(page);\n    await new Promise(r=>setTimeout(r,150));\n  }\n  throw Error('For mange Google-sider');\n}\nawait pages('lcxiM',p=>[p,null,500,null,1,3],0,1,row=>media(row,null));\nawait pages('Z5xsfc',p=>[p,null,null,null,1,null,null,100,[2],5],0,1,row=>{\n  const fields=row[row.length-1]?.['72930366'];\n  if(typeof row[0]!=='string'||!fields||typeof fields[1]!=='string') throw Error('Uventet albumlayout');\n  out.albums[row[0]]={title:fields[1],auth:fields[5]||null};\n});\nfor(const [id,album] of Object.entries(out.albums)) {\n  await pages('snAcKc',p=>[id,p,null,album.auth],1,2,row=>media(row,id));\n  delete album.auth;\n}\nout.complete=true;window.__fotoIndex={state:'done',data:JSON.stringify(out)};\n})().catch(e=>{window.__fotoIndex={state:'error',error:String(e.message||e)};});\nreturn true;\n})()", &started)); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(45 * time.Minute)
+	previous := ""
+	for time.Now().Before(deadline) {
+		var result struct {
+			State    string `json:"state"`
+			Progress string `json:"progress"`
+			Data     string `json:"data"`
+			Error    string `json:"error"`
+		}
+		if err := chromedp.Run(ctx, chromedp.Evaluate("window.__fotoIndex", &result)); err != nil {
+			return err
+		}
+		if result.State == "error" {
+			return errors.New(result.Error)
+		}
+		if result.State == "done" {
+			dir := filepath.Join(s.dlDir, ".fotoarkiv")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				return err
+			}
+			tmp := filepath.Join(dir, "metadata.json.tmp")
+			if err := ioutil.WriteFile(tmp, []byte(result.Data), 0600); err != nil {
+				return err
+			}
+			if err := os.Rename(tmp, filepath.Join(dir, "metadata.json")); err != nil {
+				return err
+			}
+			log.Printf("Albumoversigt og Google-datoer gemt")
+			return nil
+		}
+		if result.Progress != previous {
+			log.Printf("Albumindeksering: %s", result.Progress)
+			previous = result.Progress
+		}
+		time.Sleep(time.Second)
+	}
+	return errors.New("album indexing timed out; previous metadata preserved")
 }
