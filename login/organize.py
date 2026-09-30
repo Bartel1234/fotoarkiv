@@ -22,8 +22,16 @@ def digest(path):
         for chunk in iter(lambda:f.read(1024*1024),b''): h.update(chunk)
     return h.digest()
 
+def is_within(path,root):
+    # Path.is_relative_to requires Python 3.9; the desktop base uses Python 3.8.
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
 def inside(root,path):
-    if not path.is_relative_to(root) or not path.resolve().is_relative_to(root.resolve()): raise ValueError('Ugyldig sti')
+    if not is_within(path,root) or not is_within(path.resolve(),root.resolve()): raise ValueError('Ugyldig sti')
     current=path
     while current != root:
         if current.is_symlink(): raise ValueError('Symlink afvist: '+str(current))
