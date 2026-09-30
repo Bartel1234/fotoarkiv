@@ -25,7 +25,7 @@ Unraid kræver et Docker Compose-plugin, hvis `docker compose version` ikke alle
 4. Åbn `http://DIN-UNRAID-IP:8787`. Brug et vilkårligt brugernavn og adgangskoden fra `.env`.
 5. Under **Google Fotos-konti**, skriv mailadressen og tryk **Tilføj konto**. Mappen oprettes under `BACKUP_DIR`.
 6. Tryk **Google-login** på den ønskede konto. Et popup-vindue åbner på samme adresse og beskyttes af portalens adgangskode. Chrome starter automatisk og fylder visningen med Google Fotos for den valgte konto; du skal ikke åbne en terminal. Giv browseren lidt tid første gang. Hvis popup-vinduet blokeres, åbnes login i den aktuelle fane.
-7. Log ind, **luk Chrome i login-skrivebordet**, og luk popup-vinduet. Tryk derefter **Start backup** på kontoen. Hver konto har sin egen daglige kørselsplan omkring klokkeslættet `SYNC_HOUR`.
+7. Log ind, og tryk derefter **Start backup** på kontoen i portalen. Portalen afslutter login-browseren automatisk, før synkroniseringen begynder. Du kan også bruge **Afslut login** på kontokortet. Hver konto har sin egen daglige kørselsplan omkring klokkeslættet `SYNC_HOUR`.
 
 ## Betjening
 
@@ -55,3 +55,7 @@ Syncmotoren venter nu på, at Google Fotos indlæser tidslinjen, og stopper med 
 Åbn **Mine filer** i portalen på port 8787. Vælg konto, søg efter filnavn, blad gennem miniaturebillederne, og klik på et billede eller en video for at se den i browseren. **Hent fil** gemmer et enkelt originalt medie. Markér flere filer og vælg **Hent valgte som ZIP** for en lokal kopi. ZIP streames direkte til browseren uden en ekstra fuld ZIP-kopi på Unraid; der kan vælges højst 500 filer og 10 GB pr. download. Store biblioteker kan hentes i flere portioner.
 
 Arkivvisningen læser kun filerne under `BACKUP_DIR` og uploader intet til Google. Browseren kan ikke vise alle billed- og videoformater; en fil kan stadig hentes med **Hent fil**. Miniaturebilleder gemmes under `APPDATA_DIR/control/thumbnails`. Portalen kræver sin adgangskode også for visning og downloads; udgiv ikke port 8787 direkte på internettet.
+
+## Afslut login fra portalen
+
+**Start backup** afslutter automatisk kontoens login-browser og venter på, at Chrome er lukket, før samme profil bruges til synkronisering. **Afslut login** lukker en åben session uden at starte backup. Gentagne klik på Google-login for samme åbne konto opretter ikke flere loginanmodninger. Kontoen og den gemte Google-session bevares.
