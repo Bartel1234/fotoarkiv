@@ -17,13 +17,14 @@ from archive import setup as setup_archive
 from progress import progress
 
 CONTROL = Path('/control')
-PHOTOS = Path('/photos')
+PHOTOS = Path(os.environ.get('PHOTOS_DIR', '/photos'))
 ACCOUNTS = Path('/accounts')
 ACCOUNT_LIST = CONTROL / 'accounts.txt'
 PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
 REMOVAL_TIMEOUT = 45
 LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
+LOGIN_PAGE = os.environ.get('LOGIN_PAGE', '/login/')
 ASSETS = Path(__file__).parent
 TRANSLATIONS = json.loads((ASSETS / 'translations.json').read_text(encoding='utf-8'))
 
@@ -395,6 +396,8 @@ async def account_action(request):
 
 
 async def proxy(request):
+    if request.path in ('/login', '/login/') and LOGIN_PAGE != '/login/':
+        raise web.HTTPFound(LOGIN_PAGE)
     # The desktop app uses absolute asset and WebSocket paths, so route all
     # non-dashboard paths to it. It is reachable only through this auth guard.
     path = request.path.removeprefix('/login') if request.path.startswith('/login/') else request.path
@@ -465,3 +468,4 @@ if __name__ == '__main__':
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     app.router.add_route('*', '/{tail:.*}', proxy)
     web.run_app(app, host='0.0.0.0', port=8787)
+

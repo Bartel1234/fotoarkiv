@@ -1,0 +1,49 @@
+name: Single-container build and smoke test
+on:
+  push:
+    branches: [main, beta/single-container]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual image
+        run: docker build --progress=plain -t fotoarkiv:ci .
+      - name: Validate Compose and boot the complete container
+        env:
+          APP_PASSWORD: fotoarkiv-ci-only-password
+          BACKUP_DIR: /tmp/fotoarkiv-ci-media
+        run: |
+          docker compose config --quiet
+          docker run -d --name fotoarkiv-ci --shm-size=1g -e APP_PASSWORD -v "$PWD:/checks:ro" fotoarkiv:ci
+          for attempt in $(seq 1 60); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' fotoarkiv-ci)
+            if [ "$state" = healthy ]; then break; fi
+            if [ "$state" = unhealthy ]; then docker logs fotoarkiv-ci; exit 1; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' fotoarkiv-ci)" = healthy
+          docker exec fotoarkiv-ci python /container/smoke.py
+          docker exec fotoarkiv-ci google-chrome --headless --no-sandbox --disable-dev-shm-usage --dump-dom about:blank
+      - name: Run archive, organization, progress and shutdown checks
+        run: |
+          docker exec fotoarkiv-ci python /checks/test_single_proxy.py
+          docker exec fotoarkiv-ci python /checks/test_archive.py
+          docker exec fotoarkiv-ci python /checks/test_archive_index.py
+          docker exec fotoarkiv-ci python /checks/test_organization.py
+          docker exec fotoarkiv-ci python /checks/test_progress.py
+          docker exec fotoarkiv-ci python /checks/test_stop.py
+          docker exec fotoarkiv-ci python /checks/test_remove_account.py
+      - name: Verify graceful stop
+        run: |
+          docker stop --time 60 fotoarkiv-ci
+          test "$(docker inspect --format '{{.State.ExitCode}}' fotoarkiv-ci)" = 0
+      - name: Show diagnostics and clean up
+        if: always()
+        run: |
+          docker logs fotoarkiv-ci || true
+          docker rm -f fotoarkiv-ci || true

@@ -1,0 +1,45 @@
+services:
+  dashboard:
+    build: ./dashboard
+    restart: unless-stopped
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env}
+      TZ: ${TZ:-Europe/Copenhagen}
+      LOGIN_URL: http://login:80
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/control:/control
+      - ${APPDATA_DIR:-./appdata}/accounts:/accounts
+      - ${BACKUP_DIR:?Set BACKUP_DIR in .env}:/photos
+    ports:
+      - "${DASHBOARD_PORT:-8787}:8787"
+
+  sync:
+    image: fotoarkiv-browser:local
+    build: ./login
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/controller/worker.sh"]
+    environment:
+      TZ: ${TZ:-Europe/Copenhagen}
+      SYNC_HOUR: ${SYNC_HOUR:-3}
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/chrome:/tmp/gphotos-cdp
+      - ${APPDATA_DIR:-./appdata}/accounts:/accounts
+      - ${APPDATA_DIR:-./appdata}/control:/control
+      - ${BACKUP_DIR:?Set BACKUP_DIR in .env}:/download
+      - ./worker.sh:/controller/worker.sh:ro
+      - ./account-worker.sh:/controller/account-worker.sh:ro
+    shm_size: "1gb"
+
+  login:
+    image: fotoarkiv-browser:local
+    build: ./login
+    restart: unless-stopped
+    environment:
+      RESOLUTION: 1280x800
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/chrome:/config
+      - ${APPDATA_DIR:-./appdata}/accounts:/accounts
+      - ${APPDATA_DIR:-./appdata}/control:/control
+      - ./login/login-loop.sh:/controller/login-loop.sh:ro
+    shm_size: "1gb"
+

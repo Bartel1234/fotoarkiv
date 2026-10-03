@@ -1,5 +1,7 @@
 # Fotoarkiv Backup for Unraid
 
+**v0.2.0-beta.1: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
 Fotoarkiv uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
@@ -30,11 +32,11 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 - The **Existing account** keeps its original profile and files in the main backup folder. Additional accounts use folders such as `BACKUP_DIR/user@example.com`. Only add the original account again if you want a separate download starting from the beginning.
 - `APPDATA_DIR/chrome` and the account browser profiles contain Google sign-in credentials. Keep them private.
 - If a Google session expires, select **Google sign-in** for that account again. Sync normally resumes from its saved position.
-- The sign-in container has no exposed Unraid port. Access it through the portal. Keep port 8787 on your LAN or VPN.
-- Browser startup errors appear in `APPDATA_DIR/control/login-browser.log` and `docker compose logs login`. The sign-in popup uses remote browser display internally; signing in through your PC's ordinary browser does not directly provide a session to the sync worker.
+- The internal sign-in service listens only on loopback and has no exposed Unraid port. Access it through the portal. Keep port 8787 on your LAN or VPN.
+- Browser startup errors appear in `APPDATA_DIR/control/login-browser.log` and `docker compose logs fotoarkiv`. The sign-in popup uses remote browser display internally; signing in through your PC's ordinary browser does not directly provide a session to the sync worker.
 - Repeated sign-in requests for an already open account do not queue additional browser launches. Starting backup requests closure and waits for Chrome to release the profile.
 - The first download of a large library can take days. Logs are also stored under `APPDATA_DIR/control/accounts/<email>/activity.log`; the original account uses `APPDATA_DIR/control/activity.log`.
-- The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `sync` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
+- The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `fotoarkiv` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
 
 The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. Fotoarkiv does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
 
@@ -87,29 +89,57 @@ Organization saves the catalog before removing the old file, rejects symlinks an
 
 **Stop backup** appears on the account card and its media page while a run is active or pending. It stops the selected account's process group and clears pending requests. Other accounts continue running.
 
-## Update an existing Unraid installation
+## Versions and installation updates
 
-An installation extracted from ZIP/tar is not a Git checkout. Run this in the Unraid terminal. It preserves `.env`, appdata and downloaded media:
+Always choose a release version rather than downloading the moving `main` branch. Published version tags are retained; fixes receive new version numbers. v0.1.0 is the three-container source release; v0.2.0-beta.1 is the first single-container source release. No prebuilt registry image is published yet: `docker compose build` builds the selected source locally, including the current stable Chrome at build time.
+
+The single-container image supports **amd64/x86-64** Unraid systems. Chrome's Linux package used here does not support ARM. Port 8787 is the only published port. The internal VNC and web services bind to loopback. A health check probes the authenticated portal, display, login service and worker heartbeats. If a supervised process exits, it restarts inside the container. Restarting or updating the whole container interrupts every active backup; they retain their saved positions.
+
+### Upgrade from v0.1.0 / three containers
+
+Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` and `BACKUP_DIR` unchanged. It builds the new image before stopping the old containers, then removes the old containers without deleting host files or volumes. Existing account profiles and the original account's Chrome profile are reused directly.
 
 ```sh
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
+release_version=v0.2.0-beta.1
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
-curl -fL https://github.com/Bartel1234/fotoarkiv/archive/refs/heads/main.tar.gz -o "$update_dir/source.tar.gz"
-tar -xzf "$update_dir/source.tar.gz" -C "$update_dir"
-docker compose stop sync login
-cp -a "$update_dir/fotoarkiv-main/dashboard/." ./dashboard/
-cp -a "$update_dir/fotoarkiv-main/login/." ./login/
-cp "$update_dir/fotoarkiv-main/worker.sh" ./worker.sh
-cp "$update_dir/fotoarkiv-main/account-worker.sh" ./account-worker.sh
-cp "$update_dir/fotoarkiv-main/compose.yaml" ./compose.yaml
-docker compose build sync dashboard
-docker compose up -d --no-deps --force-recreate sync login dashboard
+curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
+mkdir "$update_dir/source"
+tar -xzf "$update_dir/source.tar.gz" -C "$update_dir/source" --strip-components=1
+cp -a "$update_dir/source/." ./
+docker compose build fotoarkiv
+docker compose -f compose.v0.1.yaml down
+docker compose up -d fotoarkiv
 )
 ```
 
-After updating, refresh the portal and open the account's media page. Select **Refresh albums and organize files**, or start backup. Initial organization can take time, especially when hard links are unavailable. Sign in again only if the saved Google session has expired.
+Open the portal on the same port and refresh it. You should see **one** `fotoarkiv` container. Check `docker compose ps` and `docker compose logs fotoarkiv`. Sign in again only if the saved Google session expired. The original profile remains at `APPDATA_DIR/chrome`; per-account profiles stay at `APPDATA_DIR/accounts`. Backup folder layout is unchanged. Do not run the old and new containers against the same profiles at the same time.
 
-For dashboard-only updates, copy the new `dashboard/` directory and rebuild/recreate only `dashboard`; the sync and sign-in containers can continue running.
+### Update a single-container installation
+
+Download and extract a chosen release into the project folder, keeping `.env` and host data. Then run:
+
+```sh
+docker compose build fotoarkiv
+docker compose up -d --force-recreate fotoarkiv
+```
+
+All code and worker scripts are included in the image; there are no source-script bind mounts to update separately. Changes only take effect after building and recreating the container.
+
+### Return to the three-container edition
+
+Finish or stop backups, then stop the new container before starting any old workers. Download and extract the v0.1.0 source, keeping `.env`, appdata and media. The included compatibility Compose file can also launch the previous architecture:
+
+```sh
+docker compose down
+docker compose -f compose.v0.1.yaml up -d --build
+```
+
+The compatibility file uses the preserved `dashboard/` and `login/` build definitions. Keep invoking Compose with `-f compose.v0.1.yaml` while using that layout. The exact v0.1.0 release remains available separately.
+
+## Build verification
+
+The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, a real VNC WebSocket handshake, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
