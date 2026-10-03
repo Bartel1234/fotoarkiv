@@ -219,7 +219,7 @@ async def auth(request, handler):
     except (ValueError, UnicodeError):
         valid = False
     if not valid:
-        return web.Response(status=401, text=translated(request, 'Login kræves'), headers={'WWW-Authenticate': 'Basic realm="Fotoarkiv Backup"'})
+        return web.Response(status=401, text=translated(request, 'Login kræves'), headers={'WWW-Authenticate': 'Basic realm="PhotoHarbor"'})
     response = await handler(request)
     response.headers.setdefault('Cache-Control', 'no-store')
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
@@ -460,7 +460,7 @@ if __name__ == '__main__':
     app.router.add_get('/', home)
     app.router.add_get('/archive/{email}', archive_page)
     app.router.add_get('/api/status', api_status)
-    app.router.add_get('/{name:style.css|app.js|archive.js|i18n.js|flag-en.svg|flag-da.svg}', asset)
+    app.router.add_get('/{name:style.css|app.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
     app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove}', account_action)

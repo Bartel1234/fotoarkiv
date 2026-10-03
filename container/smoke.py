@@ -19,6 +19,14 @@ def request(path, authenticated=True):
 async def main():
     assert Path('/tmp/gphotos-cdp').resolve() == Path('/config').resolve()
     assert os.environ['PHOTOS_DIR'] == '/download'
+    with request('/') as response:
+        assert b'PhotoHarbor' in response.read()
+    for path, kind in [('/photoharbor.svg', 'image/svg+xml'), ('/photoharbor-512.png', 'image/png'), ('/favicon.ico', 'image/')]:
+        with request(path) as response:
+            assert response.status == 200 and kind in response.headers['Content-Type']
+            assert len(response.read()) > 100
+    with request('/archive/legacy') as response:
+        assert b'PhotoHarbor' in response.read()
     with request('/api/status') as response:
         assert json.load(response)['online']
     try:

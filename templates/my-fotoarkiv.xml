@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Container version="2">
-  <Name>fotoarkiv</Name>
-  <Repository>ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.2</Repository>
+  <Name>PhotoHarbor</Name>
+  <Repository>ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.3</Repository>
   <Registry>https://github.com/Bartel1234/fotoarkiv/pkgs/container/fotoarkiv</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Shell>sh</Shell>
   <Support>https://github.com/Bartel1234/fotoarkiv/issues</Support>
   <Project>https://github.com/Bartel1234/fotoarkiv</Project>
-  <Overview>Google Photos backup with multiple accounts, albums, media browsing and ZIP downloads. Single-container beta for amd64. Set a password of at least 12 characters and choose your backup folders.</Overview>
+  <Overview>PhotoHarbor: local backup for Google Photos with multiple accounts, albums, media browsing and ZIP downloads. Single-container beta for amd64. Set a password of at least 12 characters and choose your backup folders.</Overview>
   <WebUI>http://[IP]:[PORT:8787]/</WebUI>
   <ExtraParams>--shm-size=1g --stop-timeout=60</ExtraParams>
   <Config Name="Web portal" Target="8787" Default="8787" Mode="tcp" Description="Portal port" Type="Port" Display="always" Required="true" Mask="false">8787</Config>
@@ -20,4 +20,5 @@
   <Config Name="Timezone" Target="TZ" Default="Europe/Copenhagen" Mode="" Description="Scheduling timezone" Type="Variable" Display="always" Required="true" Mask="false">Europe/Copenhagen</Config>
   <Config Name="Backup hour" Target="SYNC_HOUR" Default="3" Mode="" Description="Daily backup hour, 0-23" Type="Variable" Display="always" Required="true" Mask="false">3</Config>
   <Config Name="Browser resolution" Target="RESOLUTION" Default="1280x800" Mode="" Description="Sign-in browser resolution" Type="Variable" Display="always" Required="true" Mask="false">1280x800</Config>
+  <Icon>https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor-512.png</Icon>
 </Container>

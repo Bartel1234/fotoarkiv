@@ -6,9 +6,11 @@ COPY login/gphotos-cdp-main.go ./main.go
 RUN CGO_ENABLED=0 go build -buildvcs=false -mod=readonly -o /go/bin/gphotos-cdp .
 
 FROM python:3.12-slim-bookworm
-ARG VERSION=0.2.0-beta.2
+ARG VERSION=0.2.0-beta.3
 ARG REVISION
-LABEL org.opencontainers.image.source="https://github.com/Bartel1234/fotoarkiv" \
+LABEL org.opencontainers.image.title="PhotoHarbor" \
+      org.opencontainers.image.description="Local backup for Google Photos" \
+      org.opencontainers.image.source="https://github.com/Bartel1234/fotoarkiv" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$REVISION"
 ARG TARGETARCH
@@ -37,4 +39,3 @@ ENV DISPLAY=:99 RESOLUTION=1280x800 TZ=Europe/Copenhagen LOGIN_URL=http://127.0.
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["python", "/container/healthcheck.py"]
 ENTRYPOINT ["/container/entrypoint.sh"]
-

@@ -1,10 +1,16 @@
-# Fotoarkiv Backup for Unraid
+# PhotoHarbor
 
-**v0.2.0-beta.2: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+<img src="dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
+
+**Local backup for Google Photos**
+
+PhotoHarbor was previously called Fotoarkiv. Existing Compose service names, image repositories, data folders and internal metadata names are retained for upgrade compatibility.
+
+**v0.2.0-beta.3: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
-Fotoarkiv uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
+PhotoHarbor uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
 
 > Validation: the dashboard, account controls, file organization and media APIs have been tested locally. A complete Google Photos download has not been independently verified against a real account on Unraid. Check the resulting files and counts before treating the archive as complete.
 
@@ -31,10 +37,16 @@ Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-templ
 
 ```sh
 mkdir -p /boot/config/plugins/dockerMan/templates-user
-curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.2/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-fotoarkiv-beta2.xml
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta3.xml
 ```
 
-In Unraid select **Docker → Add Container → Template → fotoarkiv** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
+In Unraid select **Docker → Add Container → Template → PhotoHarbor** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
+
+### Updates through your Unraid stack
+
+For updates without editing the version each time, set `image: ghcr.io/bartel1234/fotoarkiv:beta` and `pull_policy: always` in the existing stack. Use Compose Manager Update, or Compose Pull followed by Compose Up. The beta alias advances only after publishing a release with a verified matching image. Finish active backups first. Keep your existing persistent paths and .env values.
+
+Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
 
 ### Compose without a local build
 
@@ -59,7 +71,7 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build
 - The first download of a large library can take days. Logs are also stored under `APPDATA_DIR/control/accounts/<email>/activity.log`; the original account uses `APPDATA_DIR/control/activity.log`.
 - The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `fotoarkiv` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
 
-The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. Fotoarkiv does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
+The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. PhotoHarbor does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
 
 ## Remove an account
 
@@ -90,7 +102,7 @@ The gallery uses a separate SQLite read index per account under `APPDATA_DIR/con
 
 ## Albums, dates and folder organization
 
-Backup reads Google Photos album membership and photo dates through the saved browser profile. This uses an unofficial read-only web protocol. It does not modify albums or photos in Google. Protocol fields were checked against [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) and its [response parser](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkiv's implementation is independent and uses only the read methods lcxiM, Z5xsfc and snAcKc.
+Backup reads Google Photos album membership and photo dates through the saved browser profile. This uses an unofficial read-only web protocol. It does not modify albums or photos in Google. Protocol fields were checked against [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) and its [response parser](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). PhotoHarbor's implementation is independent and uses only the read methods lcxiM, Z5xsfc and snAcKc.
 
 Each account uses this on-disk layout. Folder names are preserved when changing the interface language:
 
@@ -124,7 +136,7 @@ Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` an
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.2
+release_version=v0.2.0-beta.3
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
