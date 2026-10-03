@@ -7,12 +7,15 @@ permissions:
   contents: read
 jobs:
   container:
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Build the actual image
-        run: docker build --progress=plain -t fotoarkiv:ci .
+        run: docker build --progress=plain --build-arg VERSION="$(cat VERSION)" --build-arg REVISION="$GITHUB_SHA" -t fotoarkiv:ci .
       - name: Validate Compose and boot the complete container
         env:
           APP_PASSWORD: fotoarkiv-ci-only-password
@@ -42,8 +45,24 @@ jobs:
         run: |
           docker stop --time 60 fotoarkiv-ci
           test "$(docker inspect --format '{{.State.ExitCode}}' fotoarkiv-ci)" = 0
+      - name: Publish tested version to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/bartel1234/fotoarkiv:$(cat VERSION)"
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            docker pull "$image"
+            revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
+            test "$revision" = "$GITHUB_SHA" || { echo "Published version already exists; increment VERSION instead of overwriting it."; exit 1; }
+          else
+            docker tag fotoarkiv:ci "$image"
+            docker push "$image"
+          fi
+          docker logout ghcr.io
       - name: Show diagnostics and clean up
         if: always()
         run: |
           docker logs fotoarkiv-ci || true
           docker rm -f fotoarkiv-ci || true
+

@@ -1,6 +1,6 @@
 # Fotoarkiv Backup for Unraid
 
-**v0.2.0-beta.1: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+**v0.2.0-beta.2: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
@@ -17,13 +17,34 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 3. Run from the project folder:
 
    ```sh
-   docker compose up -d --build
+   docker compose up -d
    ```
 
 4. Open `http://YOUR-UNRAID-IP:8787`. Use any username and the password from `.env`.
 5. Under **Google Photos accounts**, enter an email address and select **Add account**. Its folder is created under `BACKUP_DIR`.
 6. Select **Google sign-in** for the account. A password-protected popup opens the browser on Unraid. Chrome opens Google Photos automatically; no terminal is needed for sign-in. Allow extra time on the first launch. If popups are blocked, sign-in opens in the current tab.
 7. Sign in, then select **Start backup** in the portal. The sign-in browser closes automatically before the sync worker uses the same profile. **Close sign-in** closes it without starting a backup. Each account has a daily schedule around `SYNC_HOUR`.
+
+### Unraid Docker template (no Community Apps required)
+
+Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-template directory:
+
+```sh
+mkdir -p /boot/config/plugins/dockerMan/templates-user
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.2/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-fotoarkiv-beta2.xml
+```
+
+In Unraid select **Docker → Add Container → Template → fotoarkiv** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
+
+### Compose without a local build
+
+The default `compose.yaml` pulls the versioned GHCR image. For a new installation, download the release, copy `.env.example` to `.env`, edit the paths and password, then run `docker compose up -d`. Existing `.env` files and backup folders must be retained when updating.
+
+For an optional build from source:
+
+```sh
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+```
 
 ## Accounts and operation
 
@@ -91,26 +112,26 @@ Organization saves the catalog before removing the old file, rejects symlinks an
 
 ## Versions and installation updates
 
-Always choose a release version rather than downloading the moving `main` branch. Published version tags are retained; fixes receive new version numbers. v0.1.0 is the three-container source release; v0.2.0-beta.1 is the first single-container source release. No prebuilt registry image is published yet: `docker compose build` builds the selected source locally, including the current stable Chrome at build time.
+Always choose a release version rather than downloading the moving `main` branch. Published version tags are retained; fixes receive new version numbers. v0.1.0 is the three-container source release; v0.2.0-beta.1 is the first single-container source release. From v0.2.0-beta.2, a tested versioned image is published at `ghcr.io/bartel1234/fotoarkiv`. Older release files remain available. The build override can build the selected source locally, including stable Chrome at build time.
 
 The single-container image supports **amd64/x86-64** Unraid systems. Chrome's Linux package used here does not support ARM. Port 8787 is the only published port. The internal VNC and web services bind to loopback. A health check probes the authenticated portal, display, login service and worker heartbeats. If a supervised process exits, it restarts inside the container. Restarting or updating the whole container interrupts every active backup; they retain their saved positions.
 
 ### Upgrade from v0.1.0 / three containers
 
-Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` and `BACKUP_DIR` unchanged. It builds the new image before stopping the old containers, then removes the old containers without deleting host files or volumes. Existing account profiles and the original account's Chrome profile are reused directly.
+Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` and `BACKUP_DIR` unchanged. It pulls the new image before stopping the old containers, then removes the old containers without deleting host files or volumes. Existing account profiles and the original account's Chrome profile are reused directly.
 
 ```sh
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.1
+release_version=v0.2.0-beta.2
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
 mkdir "$update_dir/source"
 tar -xzf "$update_dir/source.tar.gz" -C "$update_dir/source" --strip-components=1
 cp -a "$update_dir/source/." ./
-docker compose build fotoarkiv
+docker compose pull fotoarkiv
 docker compose -f compose.v0.1.yaml down
 docker compose up -d fotoarkiv
 )
@@ -123,11 +144,11 @@ Open the portal on the same port and refresh it. You should see **one** `fotoark
 Download and extract a chosen release into the project folder, keeping `.env` and host data. Then run:
 
 ```sh
-docker compose build fotoarkiv
+docker compose pull fotoarkiv
 docker compose up -d --force-recreate fotoarkiv
 ```
 
-All code and worker scripts are included in the image; there are no source-script bind mounts to update separately. Changes only take effect after building and recreating the container.
+All code and worker scripts are included in the image; there are no source-script bind mounts to update separately. Changes only take effect after pulling and recreating the container.
 
 ### Return to the three-container edition
 
@@ -143,3 +164,4 @@ The compatibility file uses the preserved `dashboard/` and `login/` build defini
 ## Build verification
 
 The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, a real VNC WebSocket handshake, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
+

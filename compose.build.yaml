@@ -1,0 +1,6 @@
+services:
+  fotoarkiv:
+    image: fotoarkiv:local
+    build:
+      context: .
+      dockerfile: Dockerfile
