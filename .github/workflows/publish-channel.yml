@@ -1,0 +1,61 @@
+name: Update published beta channel
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-channel.yml]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: published-beta-channel
+  cancel-in-progress: false
+jobs:
+  channel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Select newest published beta release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate repos/Bartel1234/fotoarkiv/releases > releases.json
+          python - <<'PY'
+          import json, os, re
+          releases = json.load(open('releases.json'))
+          candidates = []
+          for release in releases:
+              if release['draft']:
+                  continue
+              match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)-beta\.(\d+)', release['tag_name'])
+              if match:
+                  candidates.append((tuple(map(int, match.groups())), release['tag_name']))
+          if not candidates:
+              raise SystemExit('No published beta release found')
+          tag = max(candidates)[1]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('tag=' + tag + '\n')
+          print('Selected published release: ' + tag)
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+      - name: Verify released image and update beta alias
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          version="${RELEASE_TAG#v}"
+          image="ghcr.io/bartel1234/fotoarkiv:$version"
+          docker pull "$image"
+          revision=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
+          test "$revision" = "$(git rev-parse HEAD)"
+          test "$(cat VERSION)" = "$version"
+          docker tag "$image" ghcr.io/bartel1234/fotoarkiv:beta
+          docker push ghcr.io/bartel1234/fotoarkiv:beta
+          docker logout ghcr.io
+          echo "beta now points to $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
