@@ -1,8 +1,16 @@
-# Fotoarkiv Backup for Unraid
+# PhotoHarbor
+
+<img src="https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
+
+**Local backup for Google Photos.** Previously called Fotoarkiv.
+
+For the current single-container edition, use [v0.2.0-beta.3](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.2.0-beta.3) and its installation guide. Existing single-container stacks can update through `ghcr.io/bartel1234/fotoarkiv:beta`. Image names and data paths remain compatible.
+
+The instructions below describe the preserved three-container edition.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
-Fotoarkiv uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
+PhotoHarbor uses [gphotos-cdp](https://github.com/perkeep/gphotos-cdp), based on [Jake Wharton's Docker image](https://github.com/JakeWharton/docker-gphotos-sync), to operate Google Photos through Chrome. No Google Takeout export is required. Each account has its own browser profile, download position and subfolder under `BACKUP_DIR`.
 
 > Validation: the dashboard, account controls, file organization and media APIs have been tested locally. A complete Google Photos download has not been independently verified against a real account on Unraid. Check the resulting files and counts before treating the archive as complete.
 
@@ -36,7 +44,7 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 - The first download of a large library can take days. Logs are also stored under `APPDATA_DIR/control/accounts/<email>/activity.log`; the original account uses `APPDATA_DIR/control/activity.log`.
 - The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `sync` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
 
-The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. Fotoarkiv does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
+The downloader processes the main Google Photos library. Media that exists only in Archive or in shared albums outside the main library is not downloaded yet. Album indexing can discover its metadata, but local album folders contain only downloaded media. PhotoHarbor does not delete anything from Google Photos. Maintain a separate backup of the Unraid folder.
 
 ## Remove an account
 
@@ -67,7 +75,7 @@ The gallery uses a separate SQLite read index per account under `APPDATA_DIR/con
 
 ## Albums, dates and folder organization
 
-Backup reads Google Photos album membership and photo dates through the saved browser profile. This uses an unofficial read-only web protocol. It does not modify albums or photos in Google. Protocol fields were checked against [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) and its [response parser](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). Fotoarkiv's implementation is independent and uses only the read methods lcxiM, Z5xsfc and snAcKc.
+Backup reads Google Photos album membership and photo dates through the saved browser profile. This uses an unofficial read-only web protocol. It does not modify albums or photos in Google. Protocol fields were checked against [Google Photos Toolkit API](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/api.ts) and its [response parser](https://github.com/xob0t/Google-Photos-Toolkit/blob/main/src/api/parser.ts). PhotoHarbor's implementation is independent and uses only the read methods lcxiM, Z5xsfc and snAcKc.
 
 Each account uses this on-disk layout. Folder names are preserved when changing the interface language:
 
