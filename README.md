@@ -132,7 +132,7 @@ Organization saves the catalog before removing the old file, rejects symlinks an
 
 Always choose a release version rather than downloading the moving `main` branch. Published version tags are retained; fixes receive new version numbers. v0.1.0 is the three-container source release; v0.2.0-beta.1 is the first single-container source release. From v0.2.0-beta.2, a tested versioned image is published at `ghcr.io/bartel1234/fotoarkiv`. Older release files remain available. The build override can build the selected source locally, including stable Chrome at build time.
 
-The single-container image supports **amd64/x86-64** Unraid systems. Chrome's Linux package used here does not support ARM. Port 8787 is the only published port. The internal VNC and web services bind to loopback. A health check probes the authenticated portal, display, login service and worker heartbeats. If a supervised process exits, it restarts inside the container. Restarting or updating the whole container interrupts every active backup; they retain their saved positions.
+The single-container image supports **amd64/x86-64** Unraid systems. Chrome's Linux package used here does not support ARM. Port 8787 is the only published port. Chrome debugging binds to container loopback; no VNC service runs. A health check probes the authenticated portal, display, login worker and sync worker heartbeats. If a supervised process exits, it restarts inside the container. Restarting or updating the whole container interrupts every active backup; they retain their saved positions.
 
 ### Upgrade from v0.1.0 / three containers
 
@@ -181,4 +181,4 @@ The compatibility file uses the preserved `dashboard/` and `login/` build defini
 
 ## Build verification
 
-The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, a real VNC WebSocket handshake, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
+The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, real Chrome tab streaming, mouse/keyboard/text input and browser closure, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
