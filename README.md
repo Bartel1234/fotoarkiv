@@ -1,10 +1,10 @@
 # PhotoHarbor
 
-<img src="https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
+<img src="https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.4/dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
 
 **Local backup for Google Photos.** Previously called Fotoarkiv.
 
-For the current single-container edition, use [v0.2.0-beta.3](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.2.0-beta.3) and its installation guide. Existing single-container stacks can update through `ghcr.io/bartel1234/fotoarkiv:beta`. Image names and data paths remain compatible.
+For the current single-container edition, use [v0.2.0-beta.4](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.2.0-beta.4) and its installation guide. This version opens Google sign-in directly in the portal without a VNC desktop. Existing single-container stacks can update through `ghcr.io/bartel1234/fotoarkiv:beta`. Image names and data paths remain compatible.
 
 The instructions below describe the preserved three-container edition.
 
