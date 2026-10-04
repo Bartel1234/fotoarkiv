@@ -31,6 +31,7 @@ jobs:
           done
           test "$(docker inspect --format '{{.State.Health.Status}}' fotoarkiv-ci)" = healthy
           docker exec fotoarkiv-ci python /container/smoke.py
+          docker exec fotoarkiv-ci python /container/login-smoke.py
           docker exec fotoarkiv-ci google-chrome --headless --no-sandbox --disable-dev-shm-usage --dump-dom about:blank
       - name: Run archive, organization, progress and shutdown checks
         run: |
@@ -65,4 +66,3 @@ jobs:
         run: |
           docker logs fotoarkiv-ci || true
           docker rm -f fotoarkiv-ci || true
-

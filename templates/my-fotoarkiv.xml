@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Container version="2">
   <Name>PhotoHarbor</Name>
-  <Repository>ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.3</Repository>
+  <Repository>ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.4</Repository>
   <Registry>https://github.com/Bartel1234/fotoarkiv/pkgs/container/fotoarkiv</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
@@ -20,5 +20,5 @@
   <Config Name="Timezone" Target="TZ" Default="Europe/Copenhagen" Mode="" Description="Scheduling timezone" Type="Variable" Display="always" Required="true" Mask="false">Europe/Copenhagen</Config>
   <Config Name="Backup hour" Target="SYNC_HOUR" Default="3" Mode="" Description="Daily backup hour, 0-23" Type="Variable" Display="always" Required="true" Mask="false">3</Config>
   <Config Name="Browser resolution" Target="RESOLUTION" Default="1280x800" Mode="" Description="Sign-in browser resolution" Type="Variable" Display="always" Required="true" Mask="false">1280x800</Config>
-  <Icon>https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor-512.png</Icon>
+  <Icon>https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.4/dashboard/photoharbor-512.png</Icon>
 </Container>

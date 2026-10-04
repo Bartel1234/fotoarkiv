@@ -74,11 +74,11 @@ function actionButton(label, account, action) {
       if (feedback) feedback.textContent = action === 'stop' ? I18n.t('Sender anmodning om at afbryde…') : I18n.t('Sender anmodning…');
     }
     let popup;
-    if (action === 'login') popup = window.open('/login/', 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
+    if (action === 'login') popup = window.open('/login/?account=' + encodeURIComponent(account), 'fotoarkiv-google-login', 'popup=yes,width=1280,height=900,resizable=yes,scrollbars=yes');
     try {
       await postAccount('/api/accounts/' + encodeURIComponent(account) + '/' + action, {});
       if (popup) popup.focus();
-      if (action === 'login' && !popup) window.location.href = '/login/';
+      if (action === 'login' && !popup) window.location.href = '/login/?account=' + encodeURIComponent(account);
       if (action === 'start' || action === 'rescan' || action === 'close-login' || action === 'stop') {
         if (feedback) feedback.textContent = action === 'stop' ? I18n.t('Afbryder backup…') : action === 'close-login' ? I18n.t('Afslutter login-browseren…') : I18n.t('Start er bestilt. Login-browseren lukkes automatisk.');
         await refresh();

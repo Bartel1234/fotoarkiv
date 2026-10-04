@@ -1,4 +1,4 @@
-"""Probe the portal, private login service and legacy worker without logging secrets."""
+"""Probe the portal, login worker and legacy worker without logging secrets."""
 import base64
 import os
 import time
@@ -11,9 +11,6 @@ def check():
     with urllib.request.urlopen(request, timeout=4) as response:
         if response.status != 200:
             raise RuntimeError('Portal unavailable')
-    with urllib.request.urlopen('http://127.0.0.1:6080/vnc.html', timeout=4) as response:
-        if response.status != 200:
-            raise RuntimeError('Login service unavailable')
     if time.time() - int(Path('/control/heartbeat').read_text()) > 45:
         raise RuntimeError('Worker heartbeat expired')
     if time.time() - int(Path('/control/login-heartbeat').read_text()) > 15:

@@ -1,4 +1,4 @@
-"""Run inside the built image: real display, VNC WebSocket, auth and account startup."""
+"""Run inside the built image: real display, direct Chrome login, auth and account startup."""
 import asyncio
 import base64
 import json
@@ -29,22 +29,22 @@ async def main():
         assert b'PhotoHarbor' in response.read()
     with request('/api/status') as response:
         assert json.load(response)['online']
-    try:
-        request('/login/vnc.html', False)
-        raise AssertionError('Login service must require portal authentication')
-    except urllib.error.HTTPError as error:
-        assert error.code == 401
+    for path in ('/login/', '/login/login.js', '/login/login.css', '/login/stream'):
+        try:
+            request(path, False)
+            raise AssertionError('Login must require portal authentication')
+        except urllib.error.HTTPError as error:
+            assert error.code == 401
     with request('/login/') as response:
-        assert '/login/vnc.html' in response.url
-        assert b'noVNC' in response.read()
-    # noVNC imports relative assets under the /login/ proxy prefix.
-    with request('/login/app/ui.js') as response:
-        assert response.status == 200
-    async with aiohttp.ClientSession(auth=aiohttp.BasicAuth('smoke', os.environ['APP_PASSWORD'])) as client:
-        async with client.ws_connect('http://127.0.0.1:8787/login/websockify', timeout=10) as socket:
-            message = await socket.receive(timeout=10)
-            assert message.type == aiohttp.WSMsgType.BINARY, message
-            assert message.data.startswith(b'RFB '), message
+        assert b'<canvas' in response.read()
+    for path in ('/login/login.js', '/login/login.css'):
+        with request(path) as response:
+            assert response.status == 200
+    try:
+        request('/login/vnc.html')
+        raise AssertionError('Obsolete VNC page must not be available')
+    except urllib.error.HTTPError as error:
+        assert error.code == 404
     account = 'smoke@example.com'
     Path('/control/accounts.txt').write_text(account + '\n')
     deadline = time.monotonic() + 25
@@ -58,6 +58,6 @@ async def main():
         assert any(a['email'] == account and a['online'] for a in data['accounts'])
     assert Path('/download', account).is_dir()
     assert Path('/accounts', account, 'gphotos-cdp').is_dir()
-    print('Single-container portal, authentication, login assets, real VNC handshake, legacy profile and additional account passed')
+    print('Single-container portal, authentication, login assets, direct Chrome login assets, legacy profile and additional account passed')
 
 asyncio.run(main())

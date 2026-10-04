@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>PhotoHarbor · Google sign-in</title><link rel="icon" href="/photoharbor.svg"><link rel="stylesheet" href="/login/login.css"><script defer src="/login/login.js"></script></head>
+<body data-account="%%ACCOUNT%%"><input id="token" type="hidden" value="%%CSRF_TOKEN%%">
+<header><img src="/photoharbor.svg" width="38" height="38" alt=""><div><strong>PhotoHarbor</strong><small id="account">%%ACCOUNT%%</small></div><button id="done" type="button">Finish sign-in</button></header>
+<p id="status" role="status" aria-live="polite">Starting Google sign-in…</p>
+<main><canvas id="screen" tabindex="0" aria-label="Google sign-in browser. Click a field and use your keyboard." width="1280" height="800"></canvas></main>
+<form id="text-form"><label for="text">For phone keyboards or paste: click the Google field first</label><div><input id="text" type="password" autocomplete="off" placeholder="Type or paste text"><button id="send-text" type="submit">Insert text</button></div></form>
+<p id="hint">Sign in to Google in the window above, then select Finish sign-in. PhotoHarbor keeps your session on your server.</p>
+</body></html>

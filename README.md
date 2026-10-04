@@ -6,7 +6,7 @@
 
 PhotoHarbor was previously called Fotoarkiv. Existing Compose service names, image repositories, data folders and internal metadata names are retained for upgrade compatibility.
 
-**v0.2.0-beta.3: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+**v0.2.0-beta.4: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
@@ -28,7 +28,7 @@ Install a Docker Compose plugin on Unraid if `docker compose version` does not w
 
 4. Open `http://YOUR-UNRAID-IP:8787`. Use any username and the password from `.env`.
 5. Under **Google Photos accounts**, enter an email address and select **Add account**. Its folder is created under `BACKUP_DIR`.
-6. Select **Google sign-in** for the account. A password-protected popup opens the browser on Unraid. Chrome opens Google Photos automatically; no terminal is needed for sign-in. Allow extra time on the first launch. If popups are blocked, sign-in opens in the current tab.
+6. Select **Google sign-in** for the account. A password-protected popup opens the browser on Unraid. Chrome opens Google Photos automatically in the PhotoHarbor login view; no VNC desktop or terminal is needed. Click a Google field to type, or use the text insertion field below it on a phone. Select Finish sign-in when done. Allow extra time on the first launch. If popups are blocked, sign-in opens in the current tab.
 7. Sign in, then select **Start backup** in the portal. The sign-in browser closes automatically before the sync worker uses the same profile. **Close sign-in** closes it without starting a backup. Each account has a daily schedule around `SYNC_HOUR`.
 
 ### Unraid Docker template (no Community Apps required)
@@ -37,7 +37,7 @@ Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-templ
 
 ```sh
 mkdir -p /boot/config/plugins/dockerMan/templates-user
-curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta3.xml
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.4/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta4.xml
 ```
 
 In Unraid select **Docker → Add Container → Template → PhotoHarbor** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
@@ -46,7 +46,7 @@ In Unraid select **Docker → Add Container → Template → PhotoHarbor** under
 
 For updates without editing the version each time, set `image: ghcr.io/bartel1234/fotoarkiv:beta` and `pull_policy: always` in the existing stack. Use Compose Manager Update, or Compose Pull followed by Compose Up. The beta alias advances only after publishing a release with a verified matching image. Finish active backups first. Keep your existing persistent paths and .env values.
 
-Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.3/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
+Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.4/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
 
 ### Compose without a local build
 
@@ -58,6 +58,12 @@ For an optional build from source:
 docker compose -f compose.yaml -f compose.build.yaml up -d --build
 ```
 
+## Direct Google sign-in without VNC
+
+The login view streams the container's headed Chrome tab and forwards mouse, keyboard and text input. It uses the same persistent account profiles as before. Chrome debugging listens only on container loopback; only the authenticated PhotoHarbor page is exposed on port 8787. The viewer is tied to the selected account and checks origin and a page token. Opening a second viewer replaces the first. Finish sign-in or Start backup closes Chrome while preserving the session.
+
+This is still a browser-session login, not Google OAuth. Normal Google login and MFA must be validated on your installation; native OS dialogs and device-bound passkeys may not work through the tab view. NoVNC, x11vnc and websockify are removed from the single-container image. A virtual display is retained for headed Chrome.
+
 ## Accounts and operation
 
 - The status panel and account cards follow the current stage: preparation, closing sign-in, indexing photos/albums, organizing files, downloading media and stopping. During Google indexing, the panel shows the latest indexed photo and album counts rather than an estimated percentage.
@@ -66,7 +72,7 @@ docker compose -f compose.yaml -f compose.build.yaml up -d --build
 - `APPDATA_DIR/chrome` and the account browser profiles contain Google sign-in credentials. Keep them private.
 - If a Google session expires, select **Google sign-in** for that account again. Sync normally resumes from its saved position.
 - The internal sign-in service listens only on loopback and has no exposed Unraid port. Access it through the portal. Keep port 8787 on your LAN or VPN.
-- Browser startup errors appear in `APPDATA_DIR/control/login-browser.log` and `docker compose logs fotoarkiv`. The sign-in popup uses remote browser display internally; signing in through your PC's ordinary browser does not directly provide a session to the sync worker.
+- Browser startup errors appear in `APPDATA_DIR/control/login-browser.log` and `docker compose logs fotoarkiv`. The sign-in popup streams the Chrome tab directly using CDP, without VNC or a remote desktop; signing in through your PC's ordinary browser does not directly provide a session to the sync worker.
 - Repeated sign-in requests for an already open account do not queue additional browser launches. Starting backup requests closure and waits for Chrome to release the profile.
 - The first download of a large library can take days. Logs are also stored under `APPDATA_DIR/control/accounts/<email>/activity.log`; the original account uses `APPDATA_DIR/control/activity.log`.
 - The daily schedule retries after failures. Changing `SYNC_HOUR` requires restarting `fotoarkiv` and takes effect after the next run. Multiple accounts can run concurrently and use substantial CPU, disk and network resources.
@@ -136,7 +142,7 @@ Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` an
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.3
+release_version=v0.2.0-beta.4
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
@@ -176,4 +182,3 @@ The compatibility file uses the preserved `dashboard/` and `login/` build defini
 ## Build verification
 
 The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, a real VNC WebSocket handshake, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
-

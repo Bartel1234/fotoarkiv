@@ -15,6 +15,7 @@ from urllib.parse import parse_qs
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 from archive import setup as setup_archive
 from progress import progress
+from login_view import setup as setup_login
 
 CONTROL = Path('/control')
 PHOTOS = Path(os.environ.get('PHOTOS_DIR', '/photos'))
@@ -23,8 +24,6 @@ ACCOUNT_LIST = CONTROL / 'accounts.txt'
 PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
 REMOVAL_TIMEOUT = 45
-LOGIN_URL = os.environ.get('LOGIN_URL', 'http://login:80').rstrip('/')
-LOGIN_PAGE = os.environ.get('LOGIN_PAGE', '/login/')
 ASSETS = Path(__file__).parent
 TRANSLATIONS = json.loads((ASSETS / 'translations.json').read_text(encoding='utf-8'))
 
@@ -395,56 +394,6 @@ async def account_action(request):
     return web.json_response({'ok': True})
 
 
-async def proxy(request):
-    if request.path in ('/login', '/login/') and LOGIN_PAGE != '/login/':
-        raise web.HTTPFound(LOGIN_PAGE)
-    # The desktop app uses absolute asset and WebSocket paths, so route all
-    # non-dashboard paths to it. It is reachable only through this auth guard.
-    path = request.path.removeprefix('/login') if request.path.startswith('/login/') else request.path
-    if not path:
-        path = '/'
-    upstream = LOGIN_URL + path + ('?' + request.query_string if request.query_string else '')
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in
-               {'authorization', 'host', 'connection', 'upgrade', 'content-length', 'accept-encoding'}}
-    session = request.app['session']
-    if request.headers.get('Upgrade', '').lower() == 'websocket':
-        browser = web.WebSocketResponse()
-        await browser.prepare(request)
-        try:
-            async with session.ws_connect(upstream, headers=headers) as remote:
-                async def forward():
-                    async for msg in browser:
-                        if msg.type == WSMsgType.TEXT:
-                            await remote.send_str(msg.data)
-                        elif msg.type == WSMsgType.BINARY:
-                            await remote.send_bytes(msg.data)
-                        else:
-                            break
-                task = asyncio.create_task(forward())
-                try:
-                    async for msg in remote:
-                        if msg.type == WSMsgType.TEXT:
-                            await browser.send_str(msg.data)
-                        elif msg.type == WSMsgType.BINARY:
-                            await browser.send_bytes(msg.data)
-                        else:
-                            break
-                finally:
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-        except Exception:
-            pass
-        return browser
-    try:
-        async with session.request(request.method, upstream, headers=headers, data=await request.read(), allow_redirects=False) as remote:
-            payload = await remote.read()
-            response_headers = {k: v for k, v in remote.headers.items() if k.lower() not in
-                                {'connection', 'transfer-encoding', 'content-length', 'content-encoding', 'x-frame-options', 'content-security-policy'}}
-            return web.Response(body=payload, status=remote.status, headers=response_headers)
-    except Exception:
-        raise web.HTTPBadGateway(text='Login-skrivebordet starter stadig. Prøv igen om lidt.')
-
-
 async def client_session(app):
     app['session'] = ClientSession(timeout=ClientTimeout(total=None, sock_connect=15))
     yield
@@ -466,6 +415,9 @@ if __name__ == '__main__':
     app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
-    app.router.add_route('*', '/{tail:.*}', proxy)
+    setup_login(app, CONTROL, account_names, TOKEN,
+                lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
+    async def missing(request):
+        raise web.HTTPNotFound()
+    app.router.add_route('*', '/{tail:.*}', missing)
     web.run_app(app, host='0.0.0.0', port=8787)
-

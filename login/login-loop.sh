@@ -51,7 +51,7 @@ while :; do
       echo "$account" > /control/login-active
       rm -f "$profile/SingletonLock" "$profile/SingletonCookie" "$profile/SingletonSocket"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Åbner login-browser for $account" >> /control/login-browser.log
-      google-chrome --user-data-dir="$profile" --no-sandbox --disable-setuid-sandbox --disable-gpu --disable-nacl --disable-dev-shm-usage --start-maximized --no-first-run https://photos.google.com >> /control/login-browser.log 2>&1 &
+      google-chrome --user-data-dir="$profile" --no-sandbox --disable-setuid-sandbox --disable-gpu --disable-nacl --disable-dev-shm-usage --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --window-size=1280,900 --no-first-run https://photos.google.com >> /control/login-browser.log 2>&1 &
       browser_pid=$!
       closing=false
       while kill -0 "$browser_pid" 2>/dev/null; do
