@@ -69,7 +69,12 @@ if [ ! -f "$NEXT" ]; then python3 "$BACKUP_STATE" next "$state" > "$NEXT"; fi
 settings_stamp=$(stat -c %y "$state/settings.json" 2>/dev/null || echo none)
 history_pid=
 sync_pid=
+idle_pid=
 cleanup() {
+  if [ -n "$idle_pid" ]; then
+    kill "$idle_pid" 2>/dev/null || true
+    wait "$idle_pid" 2>/dev/null || true
+  fi
   if [ -n "$sync_pid" ]; then
     /bin/kill -TERM -- "-$sync_pid" 2>/dev/null || true
     sleep 2
@@ -181,6 +186,9 @@ while :; do
     echo "$result" > "$state/last-exit"
     python3 "$BACKUP_STATE" next "$state" > "$NEXT"
   fi
-  sleep 10
+  # Waiting on a child lets TERM interrupt the idle poll immediately in dash.
+  sleep 10 &
+  idle_pid=$!
+  wait "$idle_pid" || true
+  idle_pid=
 done
-
