@@ -112,7 +112,7 @@ class ChromeTab:
         await self.remote.close()
 
 
-def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0.0.1:9222'):
+def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0.0.1:9222', version='development'):
     assets = Path(__file__).parent
     connections = set()
 
@@ -131,7 +131,7 @@ def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0
     async def page(request):
         name = account(request)
         template = (assets / 'login.html').read_text()
-        text = template.replace('%%ACCOUNT%%', html.escape(name, quote=True)).replace('%%CSRF_TOKEN%%', token)
+        text = template.replace('%%ACCOUNT%%', html.escape(name, quote=True)).replace('%%CSRF_TOKEN%%', token).replace('%%APP_VERSION%%', html.escape(version))
         return web.Response(text=text, content_type='text/html', headers={
             'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
             'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'"})

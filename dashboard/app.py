@@ -25,6 +25,11 @@ PASSWORD = os.environ['APP_PASSWORD']
 TOKEN = secrets.token_urlsafe(24)
 REMOVAL_TIMEOUT = 45
 ASSETS = Path(__file__).parent
+try:
+    APP_VERSION = (ASSETS / 'VERSION').read_text(encoding='utf-8').strip()
+except OSError:
+    APP_VERSION = 'development'
+DISPLAY_VERSION = 'v' + APP_VERSION if APP_VERSION != 'development' else APP_VERSION
 TRANSLATIONS = json.loads((ASSETS / 'translations.json').read_text(encoding='utf-8'))
 
 def translated(request, text):
@@ -32,7 +37,7 @@ def translated(request, text):
 
 def page_template(name):
     catalog = json.dumps(TRANSLATIONS, ensure_ascii=False).replace('<', '\u003c')
-    return (ASSETS / name).read_text(encoding='utf-8').replace('</head>', '<script id="translation-catalog" type="application/json">' + catalog + '</script></head>')
+    return (ASSETS / name).read_text(encoding='utf-8').replace('%%APP_VERSION%%', html.escape(DISPLAY_VERSION)).replace('</head>', '<script id="translation-catalog" type="application/json">' + catalog + '</script></head>')
 
 @web.middleware
 async def language(request, handler):
@@ -416,7 +421,7 @@ if __name__ == '__main__':
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     setup_login(app, CONTROL, account_names, TOKEN,
-                lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
+                lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN), version=DISPLAY_VERSION)
     async def missing(request):
         raise web.HTTPNotFound()
     app.router.add_route('*', '/{tail:.*}', missing)

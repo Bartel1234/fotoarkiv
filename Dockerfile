@@ -6,7 +6,7 @@ COPY login/gphotos-cdp-main.go ./main.go
 RUN CGO_ENABLED=0 go build -buildvcs=false -mod=readonly -o /go/bin/gphotos-cdp .
 
 FROM python:3.12-slim-bookworm
-ARG VERSION=0.2.0-beta.4
+ARG VERSION=0.2.0-beta.5
 ARG REVISION
 LABEL org.opencontainers.image.title="PhotoHarbor" \
       org.opencontainers.image.description="Local backup for Google Photos" \
@@ -27,6 +27,7 @@ COPY --from=sync-binaries /go/bin/gphotos-cdp /usr/local/bin/gphotos-cdp
 RUN printf '#!/bin/sh\nexec /usr/bin/google-chrome --no-sandbox "$@"\n' > /usr/local/bin/chromium \
     && chmod +x /usr/local/bin/chromium
 COPY dashboard/ /app/
+COPY VERSION /app/VERSION
 COPY worker.sh account-worker.sh /controller/
 COPY login/login-loop.sh /controller/login-loop.sh
 COPY login/organize.py /usr/local/bin/fotoarkiv-organize.py

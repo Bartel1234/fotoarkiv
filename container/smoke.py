@@ -19,8 +19,13 @@ def request(path, authenticated=True):
 async def main():
     assert Path('/tmp/gphotos-cdp').resolve() == Path('/config').resolve()
     assert os.environ['PHOTOS_DIR'] == '/download'
-    with request('/') as response:
-        assert b'PhotoHarbor' in response.read()
+    version = Path('/app/VERSION').read_text().strip()
+    assert version == Path('/checks/VERSION').read_text().strip()
+    for page in ('/', '/archive/legacy', '/login/'):
+        with request(page) as response:
+            body = response.read()
+            assert b'PhotoHarbor' in body and ('v' + version).encode() in body
+            assert b'%%APP_VERSION%%' not in body
     for path, kind in [('/photoharbor.svg', 'image/svg+xml'), ('/photoharbor-512.png', 'image/png'), ('/favicon.ico', 'image/')]:
         with request(path) as response:
             assert response.status == 200 and kind in response.headers['Content-Type']
