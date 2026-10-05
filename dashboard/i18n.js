@@ -34,6 +34,8 @@ const I18n = (() => {
       removing: ['Fjerner konto', 'Venter på, at backup og login er stoppet sikkert.'],
       starting: ['Forbereder backup', 'Forbereder kontoens browserprofil.'],
       waiting_login: ['Afslutter login-browser', 'Venter på, at login-browseren frigiver kontoen.'],
+      finishing: ['Gemmer backupresultat', 'Gemmer historik og sender eventuelle notifikationer.'],
+      checking: ['Kontrollerer backup', 'Kontrollerer at katalogets lokale filer findes og ikke er tomme.'],
       indexing: ['Indekserer billeder og albums', 'Læser billeddatoer og albumtilknytninger fra Google Fotos.'],
       organizing: ['Organiserer filer', 'Placering og albumreferencer opdateres på serveren.'],
       downloading: ['Henter billeder og videoer', 'Mediefiler hentes fra Google Fotos og organiseres løbende.'],
@@ -50,3 +52,4 @@ const I18n = (() => {
   }
   return {t, phase, locale: () => language === 'da' ? 'da-DK' : 'en-GB', set};
 })();
+

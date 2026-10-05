@@ -166,8 +166,19 @@ def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0
             async def watch():
                 nonlocal tab, attached
                 target_id = None
+                last_wait = None
                 deadline = asyncio.get_running_loop().time() + 90
                 while not viewer.closed:
+                    state = control if name == 'legacy' else control/'accounts'/name
+                    backup_busy = (state/'running').exists()
+                    if not attached and backup_busy:
+                        deadline = asyncio.get_running_loop().time() + 90
+                        if last_wait != 'backup':
+                            await viewer.send_json({'type':'waiting_backup'})
+                            last_wait = 'backup'
+                    elif not attached and last_wait == 'backup':
+                        await viewer.send_json({'type':'waiting'})
+                        last_wait = 'browser'
                     if not attached and asyncio.get_running_loop().time() > deadline:
                         await viewer.send_json({'type': 'error', 'message': 'Login did not start. Close this window and try Google sign-in again.'})
                         await viewer.close()
@@ -202,7 +213,7 @@ def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0
                                 target_id = target['id']
                                 attached = True
                                 await viewer.send_json({'type': 'ready'})
-                        except (ClientError, OSError, ValueError, RuntimeError, asyncio.TimeoutError):
+                        except (ClientError, ConnectionError, OSError, ValueError, RuntimeError, asyncio.TimeoutError):
                             if tab:
                                 await tab.close()
                                 tab = None
@@ -253,3 +264,4 @@ def setup(app, control, account_names, token, valid_token, cdp_url='http://127.0
     app.router.add_get('/login/', page)
     app.router.add_get('/login/{asset:login.js|login.css}', asset)
     app.router.add_get('/login/stream', stream)
+

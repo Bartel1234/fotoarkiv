@@ -45,6 +45,7 @@ async function refresh() {
     el('disk-bar').style.width = s.total ? Math.min(100, Math.max(0, 100 * (s.total - s.free) / s.total)) + '%' : '0%';
     el('updated').textContent = I18n.t('Opdateret ') + new Date().toLocaleTimeString(I18n.locale(), {hour: '2-digit', minute: '2-digit', second: '2-digit'});
     renderAccounts(s.accounts || [], s);
+    updateAccountTools(s);
   } catch (error) {
     if (number !== refreshNumber) return;
     el('status').textContent = I18n.t('Forbindelsen er afbrudt');
@@ -123,6 +124,8 @@ function renderAccounts(accounts, summary) {
       window.location.assign('/archive/' + encodeURIComponent(account.email));
     });
     controls.append(browse);
+    const tools=document.createElement('button');tools.type='button';tools.className='outline';tools.textContent=I18n.t('Indstillinger og historik');
+    tools.addEventListener('click',event=>{event.stopPropagation();openAccountTools(account);});controls.append(tools);
     if(account.email !== 'legacy') {
       const remove=document.createElement('button');remove.type='button';remove.className='outline danger';remove.textContent=I18n.t('Fjern konto');
       remove.addEventListener('click',event=>{event.stopPropagation();openRemoval(account);});controls.append(remove);
@@ -139,7 +142,8 @@ function renderAccounts(accounts, summary) {
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
     feedback.textContent = phase ? phase.detail : account.stopping ? I18n.t('◷ Afbryder backup – venter på at processerne lukker.') : account.running ? I18n.t('● Backup kører nu – nye filer vises i overblikket.') : account.pending ? account.login_active ? I18n.t('◷ Afslutter login-browseren før backup…') : I18n.t('◷ Start er bestilt – venter på synkroniseringsmotoren.') : account.login_active ? I18n.t('Login-browseren er åben. Start backup lukker den automatisk.') : '';
-    card.append(detail, controls, feedback);
+    const verification=document.createElement('small');verification.className='account-verification';verification.textContent=verificationText(account.verification);
+    card.append(detail, controls, feedback, verification);
     list.append(card);
   }
 }
@@ -198,3 +202,4 @@ el('remove-submit').addEventListener('click',async()=>{
   } catch(error) {el('remove-message').textContent=error.message;}
   finally {removalBusy=false;el('remove-account-dialog').querySelectorAll('button,input').forEach(node=>{node.disabled=false;});renderRemoval();}
 });
+

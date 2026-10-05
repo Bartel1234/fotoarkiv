@@ -12,10 +12,11 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs
-from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
+from aiohttp import ClientSession, ClientTimeout, ClientError, WSMsgType, web
 from archive import setup as setup_archive
 from progress import progress
 from login_view import setup as setup_login
+from backup_state import settings, validate, atomic, load, next_run
 
 CONTROL = Path('/control')
 PHOTOS = Path(os.environ.get('PHOTOS_DIR', '/photos'))
@@ -154,7 +155,8 @@ def account_summaries():
         except OSError:
             account_log = raw_account_log = ''
         try:
-            account_next_run = datetime.fromtimestamp(int(value('next-run'))).strftime('%d/%m/%Y kl. %H:%M')
+            due=int(value('next-run'))
+            account_next_run = datetime.fromtimestamp(due).strftime('%d/%m/%Y kl. %H:%M') if due else 'Automatisk backup slået fra'
         except (ValueError, OverflowError, OSError):
             account_next_run = 'Ikke planlagt'
         running = online and (state / 'running').exists()
@@ -164,7 +166,7 @@ def account_summaries():
         phase = progress(state, raw_account_log, online=online, running=running, pending=pending, stopping=stopping, login_active=login_active)
         removing = (state / 'removal-pending').exists()
         if removing: phase['phase'] = 'removing'
-        result.append({**phase, 'removing': removing, 'email': email, 'folder': email, 'count': count, 'bytes': size,
+        result.append({**account_details(state), **phase, 'removing': removing, 'email': email, 'folder': email, 'count': count, 'bytes': size,
                        'online': online, 'running': online and (state / 'running').exists(),
                        'pending': (state / 'start-request').exists(),
                        'stopping': (state / 'stop-request').exists(),
@@ -172,6 +174,13 @@ def account_summaries():
                        'last_run': value('last-run') or 'Ingen endnu', 'last_exit': value('last-exit'),
                        'next_run': account_next_run, 'log': account_log or 'Der er endnu ingen aktivitet for denne konto.'})
     return result
+
+
+def account_details(state):
+    return {'settings': settings(state), 'history': load(state/'history.json', []),
+            'verification': load(state/'verification.json', None),
+            'last_success': load(state/'last-success.json', None),
+            'notification': load(state/'notification-status.json', None)}
 
 
 def status():
@@ -182,7 +191,8 @@ def status():
     except OSError:
         log = raw_log = ''
     try:
-        next_run = datetime.fromtimestamp(int(read('next-run'))).strftime('%d/%m/%Y kl. %H:%M')
+        due=int(read('next-run'))
+        next_run = datetime.fromtimestamp(due).strftime('%d/%m/%Y kl. %H:%M') if due else 'Automatisk backup slået fra'
     except (ValueError, OverflowError, OSError):
         next_run = 'Ikke planlagt'
     try:
@@ -207,7 +217,7 @@ def status():
     else:
         label, tone = 'Klar til første kørsel', 'pending'
     phase = progress(CONTROL, raw_log, online=online, running=running, pending=pending, stopping=(CONTROL / 'stop-request').exists(), login_active=read('login-active') == 'legacy')
-    return {**inventory(), **phase, 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
+    return {**account_details(CONTROL), **inventory(), **phase, 'accounts': account_summaries(), 'label': label, 'tone': tone, 'online': online,
             'running': running, 'pending': pending, 'stopping': (CONTROL / 'stop-request').exists(), 'login_active': read('login-active') == 'legacy', 'last_run': read('last-run') or 'Ingen endnu',
             'next_run': next_run, 'last_exit': exit_code, 'started': read('running') if running else '',
             'log': log or 'Der er endnu ingen aktivitet.'}
@@ -256,6 +266,7 @@ async def api_status(request):
                     record[key] = record[key].replace(' kl. ', ' at ')
                 if key == 'next_run' and request.cookies.get('fotoarkiv_language') != 'da':
                     record[key] = record[key].replace(' kl. ', ' at ')
+    data['update'] = request.app.get('release_status', {'state':'checking', 'installed':APP_VERSION})
     return web.json_response(data)
 
 
@@ -302,7 +313,7 @@ async def remove_account(request, email, data):
             (state / name).unlink(missing_ok=True)
         (state / 'removal-pending').write_text('1')
         request_login_close(email)
-        for name in ('start-request', 'rescan-request', 'organize-request'):
+        for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request'):
             (state / name).unlink(missing_ok=True)
         try:
             deadline = time.monotonic() + REMOVAL_TIMEOUT
@@ -372,6 +383,13 @@ async def account_action(request):
         return await remove_account(request, email, data)
     if email != 'legacy' and (CONTROL / 'accounts' / email / 'removal-pending').exists():
         raise web.HTTPConflict(text='Kontoen er ved at blive fjernet')
+    state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+    state.mkdir(parents=True, exist_ok=True)
+    if action == 'settings':
+        try: config = validate(data.get('settings', {}))
+        except (ValueError, TypeError, AttributeError) as error: raise web.HTTPBadRequest(text=str(error))
+        atomic(state/'settings.json', config)
+        return web.json_response({'ok':True, 'settings':config})
     if action == 'login':
         if read('login-active') != email:
             (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
@@ -380,10 +398,17 @@ async def account_action(request):
     elif action == 'stop':
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
         (state / 'stop-request').write_text(str(int(time.time())), encoding='utf-8')
-        for name in ('start-request', 'rescan-request', 'organize-request'):
+        for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request'):
             (state / name).unlink(missing_ok=True)
-    elif action in ('start', 'rescan', 'organize'):
+    elif action in ('start', 'rescan', 'organize', 'verify', 'repair'):
         state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+        if action in ('verify', 'repair'):
+            if (state/'running').exists() or (state/'start-request').exists():
+                raise web.HTTPConflict(text='Wait for the current job to finish')
+            if action == 'verify': (state/'verify-request').write_text('1')
+            else:
+                (state/'repair-request').write_text('1')
+                (state/'rescan-request').write_text('1')
         if action == 'organize':
             if (state / 'running').exists():
                 raise web.HTTPConflict(text='Vent til den aktuelle backup er afsluttet')
@@ -392,16 +417,44 @@ async def account_action(request):
             if (state / 'running').exists():
                 raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
             (state / 'rescan-request').write_text(str(int(time.time())), encoding='utf-8')
-        request_login_close(email)
+        if action != 'verify': request_login_close(email)
         (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
     else:
         raise web.HTTPNotFound()
     return web.json_response({'ok': True})
 
 
+def version_key(version):
+    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?', version)
+    if not match: return None
+    return tuple(map(int, match.groups()[:3])) + (int(match[4]) if match[4] else 10**9,)
+
+async def release_watch(app):
+    # Public release metadata only. No user/account data is sent to GitHub.
+    while True:
+        try:
+            async with app['session'].get('https://api.github.com/repos/Bartel1234/fotoarkiv/releases?per_page=100',
+                    headers={'Accept':'application/vnd.github+json'}, timeout=ClientTimeout(total=15)) as response:
+                response.raise_for_status(); releases = await response.json()
+            candidates = [r for r in releases if not r.get('draft') and version_key(r.get('tag_name',''))]
+            if not candidates: raise ValueError('No published releases')
+            latest = max(candidates, key=lambda r: version_key(r['tag_name']))
+            url = latest.get('html_url','')
+            if not url.startswith('https://github.com/Bartel1234/fotoarkiv/releases/tag/'): raise ValueError('Invalid release URL')
+            installed = version_key(APP_VERSION)
+            app['release_status'] = {'state':'available' if installed and version_key(latest['tag_name']) > installed else 'current',
+                'installed':APP_VERSION, 'latest':latest['tag_name'], 'url':url}
+        except (ClientError, ValueError, TypeError, asyncio.TimeoutError):
+            app['release_status'] = {**app.get('release_status', {}), 'state':'unavailable', 'installed':APP_VERSION}
+        await asyncio.sleep(21600)
+
+
 async def client_session(app):
     app['session'] = ClientSession(timeout=ClientTimeout(total=None, sock_connect=15))
+    task = asyncio.create_task(release_watch(app))
     yield
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
     await app['session'].close()
 
 
@@ -414,10 +467,10 @@ if __name__ == '__main__':
     app.router.add_get('/', home)
     app.router.add_get('/archive/{email}', archive_page)
     app.router.add_get('/api/status', api_status)
-    app.router.add_get('/{name:style.css|app.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
+    app.router.add_get('/{name:style.css|app.js|enhancements.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove}', account_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove|settings|verify|repair}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     setup_login(app, CONTROL, account_names, TOKEN,
@@ -426,3 +479,4 @@ if __name__ == '__main__':
         raise web.HTTPNotFound()
     app.router.add_route('*', '/{tail:.*}', missing)
     web.run_app(app, host='0.0.0.0', port=8787)
+

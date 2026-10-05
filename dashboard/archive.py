@@ -72,14 +72,19 @@ async def listing(request):
     if page<1 or page>100000:raise web.HTTPBadRequest(text='Ugyldigt sidetal')
     album=request.query.get('album','')[:200]
     search=request.query.get('q','').strip()[:100]
+    try:
+        year=int(request.query.get('year','0'));month=int(request.query.get('month','0'))
+    except ValueError: raise web.HTTPBadRequest(text='Invalid date filter')
+    kind=request.query.get('kind','');sort=request.query.get('sort','newest')
+    if not 0<=year<=9999 or not 0<=month<=12 or kind not in ('','image','video') or sort not in ('newest','oldest'): raise web.HTTPBadRequest(text='Invalid filter')
     target=await request.app['archive_index'].ensure(account,root)
-    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page)
+    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page,year,month,kind,sort)
     items=[]
     for item,name,size,kind,label,source in rows:
         suffix='/'.join(quote(part,safe='') for part in (account,item,name))
         items.append({'id':item,'name':name,'size':size,'kind':kind,'modified':label,
                       'date_source':source,'url':'/api/archive/file/'+suffix,
-                      'thumb':'/api/archive/thumb/'+suffix if kind=='image' else None})
+                      'thumb':'/api/archive/thumb/'+suffix})
     def report():
         try:return json.loads((root/'.fotoarkiv/organization.json').read_text())
         except (OSError,ValueError):return None
@@ -99,6 +104,14 @@ async def file_response(request):
 
 def create_thumb(source, target):
     target.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() in VIDEOS:
+        import subprocess
+        temporary=target.with_suffix('.tmp')
+        try:
+            subprocess.run(['ffmpeg','-nostdin','-v','error','-protocol_whitelist','file,pipe','-i',str(source),'-frames:v','1','-vf','scale=320:320:force_original_aspect_ratio=decrease','-f','image2','-vcodec','mjpeg',str(temporary)], check=True, timeout=15, capture_output=True)
+            os.replace(temporary,target)
+        finally: temporary.unlink(missing_ok=True)
+        return
     with Image.open(source) as image:
         image = ImageOps.exif_transpose(image)
         image.thumbnail((320, 320))
@@ -111,7 +124,7 @@ def create_thumb(source, target):
 
 async def thumbnail(request):
     path = await asyncio.to_thread(media_path, request, request.match_info['account'], request.match_info['item'], request.match_info['name'])
-    if path.suffix.lower() not in IMAGES:
+    if path.suffix.lower() not in IMAGES | VIDEOS:
         raise web.HTTPNotFound()
     stat = path.stat()
     key = request.match_info['account'] + '-' + request.match_info['item']
@@ -121,7 +134,7 @@ async def thumbnail(request):
             async with request.app['thumb_slots']:
                 if not target.is_file():
                     await asyncio.to_thread(create_thumb, path, target)
-        except (OSError, UnidentifiedImageError, ValueError):
+        except (OSError, UnidentifiedImageError, ValueError, __import__("subprocess").SubprocessError):
             raise web.HTTPNotFound(text='Kan ikke lave miniature')
     return web.FileResponse(target, headers={'Cache-Control': 'private, max-age=86400'})
 
@@ -221,3 +234,4 @@ def setup(app, photos_root, thumb_root, account_names, valid_token):
     app.router.add_get('/api/archive/thumb/{account}/{item}/{name}', thumbnail)
     app.router.add_post('/api/archive/zip', download_zip)
     app.router.add_post('/api/archive/album', album_info)
+

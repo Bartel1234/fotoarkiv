@@ -1,7 +1,7 @@
 """Read account stages without treating old logs as current progress."""
 import re
 
-STAGES={'starting','waiting_login','indexing','organizing','downloading'}
+STAGES={'starting','waiting_login','indexing','organizing','downloading','checking','finishing'}
 
 def progress(state, raw_log, *, online, running, pending, stopping, login_active):
     result={'phase':'idle','indexed_items':None,'indexed_albums':None}
@@ -24,3 +24,4 @@ def progress(state, raw_log, *, online, running, pending, stopping, login_active
     elif pending:
         result['phase']='starting'
     return result
+

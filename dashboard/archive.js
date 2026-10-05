@@ -19,12 +19,17 @@ function archivePreview(item) {
   const media = document.createElement(item.kind === 'video' ? 'video' : 'img');
   media.src = item.url;
   if (item.kind === 'video') { media.controls = true; media.preload = 'metadata'; }
+  if(item.kind==='video'){media.playsInline=true;media.addEventListener('error',()=>{archiveEl('archive-playback-error').textContent=I18n.t('Browseren kan ikke afspille dette format. Hent filen for at se den i en videoafspiller.');});}
+  archiveEl('archive-playback-error').textContent='';
   media.alt = item.name;
   container.append(media);
   archiveEl('archive-caption').textContent = item.name + ' · ' + archiveSize(item.size);
   archiveEl('archive-download').href = item.url + '?download=1';
   archiveEl('archive-download').download = item.name;
-  dialog.showModal();
+  archiveState.preview=item;
+  const position=archiveState.items.indexOf(item);
+  archiveEl('preview-prev').disabled=position<=0;archiveEl('preview-next').disabled=position>=archiveState.items.length-1;
+  if(!dialog.open)dialog.showModal();
 }
 
 function archiveRender() {
@@ -38,7 +43,9 @@ function archiveRender() {
     const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'archive-tile';
     if (item.thumb) {
       const img = document.createElement('img'); img.src = item.thumb; img.loading = 'lazy'; img.alt = '';
+      img.addEventListener('error',()=>{img.remove();preview.append(document.createTextNode(item.kind==='video'?'▶ Video':I18n.t('Forhåndsvisning ikke tilgængelig')));},{once:true});
       preview.append(img);
+      if(item.kind==='video'){const badge=document.createElement('span');badge.className='video-badge';badge.textContent='▶ Video';preview.append(badge);}
     } else {
       const icon = document.createElement('span'); icon.textContent = '▶ Video'; preview.append(icon);
     }
@@ -73,7 +80,7 @@ async function archiveLoad() {
   archiveEl('archive-grid').textContent = I18n.t('Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.');
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
-      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value});
+      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value,year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,kind:archiveEl('archive-kind').value,sort:archiveEl('archive-sort').value});
     const response = await fetch('/api/archive?' + params, {cache: 'no-store',signal});
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
@@ -197,3 +204,13 @@ archiveEl('archive-album-download').addEventListener('click', async () => {
   } catch(error) {archiveEl('archive-message').textContent=error.message;}
   finally {const chosen=archiveEl('archive-album').value;button.disabled=!chosen || chosen==='__none__';}
 });
+
+
+for(const id of ['archive-year','archive-month','archive-kind','archive-sort'])archiveEl(id).addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
+archiveEl('archive-reset').addEventListener('click',()=>{
+  archiveEl('archive-year').value='';archiveEl('archive-month').value='0';archiveEl('archive-kind').value='';archiveEl('archive-sort').value='newest';archiveEl('archive-search').value='';archiveEl('archive-album').value='';
+  archiveState.page=1;archiveState.selected.clear();archiveLoad();
+});
+function previewStep(delta){const n=archiveState.items.indexOf(archiveState.preview)+delta;if(n>=0&&n<archiveState.items.length)archivePreview(archiveState.items[n]);}
+archiveEl('preview-prev').addEventListener('click',()=>previewStep(-1));archiveEl('preview-next').addEventListener('click',()=>previewStep(1));
+archiveEl('archive-preview').addEventListener('keydown',event=>{if(event.target.tagName==='VIDEO')return;if(event.key==='ArrowLeft')previewStep(-1);if(event.key==='ArrowRight')previewStep(1);});

@@ -1,6 +1,6 @@
 services:
   fotoarkiv:
-    image: ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.5
+    image: ghcr.io/bartel1234/fotoarkiv:0.2.0-beta.6
     platform: linux/amd64
     restart: unless-stopped
     stop_grace_period: 60s
@@ -17,3 +17,4 @@ services:
     ports:
       - "${DASHBOARD_PORT:-8787}:8787"
     shm_size: "1gb"
+

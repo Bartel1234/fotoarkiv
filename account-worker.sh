@@ -1,6 +1,7 @@
 #!/bin/sh
 set -u
 account=$1
+BACKUP_STATE=${BACKUP_STATE:-/app/backup_state.py}
 if [ "$account" = legacy ]; then
   state=/control
   destination=/download
@@ -15,6 +16,12 @@ set_phase() {
   mv -f "$state/phase.tmp" "$state/phase"
 }
 run_sync() {
+  python3 "$BACKUP_STATE" begin "$state" "$destination" --mode "$run_mode" || return 1
+  index_result=0
+  if [ "$organize_only" = 2 ]; then python3 "$BACKUP_STATE" repair "$state" "$destination" || return 1; fi
+  set_phase checking
+  python3 "$BACKUP_STATE" check "$state" "$destination" || return 1
+  if [ "$organize_only" = 3 ]; then return 0; fi
   set_phase indexing
   echo "Henter albums og Google-datoer"
   if TMPDIR="$profile_tmp" gphotos-cdp -dev -headless -index-albums -dldir "$destination"; then
@@ -24,10 +31,15 @@ run_sync() {
       return 1
     fi
   else
+    index_result=1
     echo "FEJL: Kunne ikke opdatere albumindeks. Tidligere indeks og filer bevares."
     if [ "$organize_only" = 1 ]; then return 1; fi
   fi
-  if [ "$organize_only" = 1 ]; then return 0; fi
+  if [ "$organize_only" = 1 ]; then
+    set_phase checking
+    python3 "$BACKUP_STATE" check "$state" "$destination"
+    return $?
+  fi
   set_phase downloading
   TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -run /usr/local/bin/fotoarkiv-organize-one -dldir "$destination"
   download_result=$?
@@ -35,10 +47,14 @@ run_sync() {
     set_phase organizing
     python3 /usr/local/bin/fotoarkiv-organize.py "$destination" || return 1
   fi
+  set_phase checking
+  python3 "$BACKUP_STATE" check "$state" "$destination" || return 1
+  if [ "$index_result" != 0 ]; then return 1; fi
   return "$download_result"
 }
 if [ "${2:-}" = --run ]; then
   organize_only=${3:-0}
+  run_mode=${4:-backup}
   run_sync
   exit $?
 fi
@@ -49,7 +65,9 @@ RUNNING="$state/running"
 LOG="$state/activity.log"
 # A restarted account worker owns no job yet.
 rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
-if [ ! -f "$NEXT" ]; then echo "$(($(date +%s) + 86400))" > "$NEXT"; fi
+if [ ! -f "$NEXT" ]; then python3 "$BACKUP_STATE" next "$state" > "$NEXT"; fi
+settings_stamp=$(stat -c %y "$state/settings.json" 2>/dev/null || echo none)
+history_pid=
 sync_pid=
 cleanup() {
   if [ -n "$sync_pid" ]; then
@@ -58,6 +76,7 @@ cleanup() {
     /bin/kill -KILL -- "-$sync_pid" 2>/dev/null || true
     wait "$sync_pid" 2>/dev/null || true
   fi
+  if [ -n "$history_pid" ]; then wait "$history_pid" 2>/dev/null || true; fi
   rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
   exit 0
 }
@@ -66,17 +85,23 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') Worker klar: $account" >> "$LOG"
 while :; do
   NOW=$(date +%s)
   echo "$NOW" > "$state/heartbeat"
+  current_stamp=$(stat -c %y "$state/settings.json" 2>/dev/null || echo none)
+  if [ "$current_stamp" != "$settings_stamp" ]; then
+    python3 "$BACKUP_STATE" next "$state" > "$NEXT"
+    settings_stamp=$current_stamp
+  fi
   DUE=$(cat "$NEXT" 2>/dev/null || echo 0)
   case "$DUE" in *[!0-9]*|'') DUE=0;; esac
   if [ -f "$state/stop-request" ] && [ ! -f "$RUNNING" ]; then
-    rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request"
+    rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request"
     echo 130 > "$state/last-exit"
-    echo "$(($(date +%s) + 86400))" > "$NEXT"
+    python3 "$BACKUP_STATE" next "$state" > "$NEXT"
   fi
-  if [ -f "$REQUEST" ] || [ "$NOW" -ge "$DUE" ]; then
+  if [ -f "$REQUEST" ] || { [ "$DUE" -gt 0 ] && [ "$NOW" -ge "$DUE" ]; }; then
     organize_only=0
     if [ -f "$state/organize-request" ]; then organize_only=1; rm -f "$state/organize-request"; fi
-    while [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
+    if [ -f "$state/verify-request" ]; then organize_only=3; rm -f "$state/verify-request"; fi
+    while [ "$organize_only" != 3 ] && [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
       set_phase waiting_login
       echo "$(date '+%Y-%m-%d %H:%M:%S') Venter på at login-browseren lukkes: $account" >> "$LOG"
       date +%s > "$state/heartbeat"
@@ -84,17 +109,19 @@ while :; do
       sleep 2
     done
     if [ -f "$state/stop-request" ]; then
-      rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request"
+      rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request"
       echo "130" > "$state/last-exit"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Backup afbrudt før start: $account" >> "$LOG"
-      echo "$(($(date +%s) + 86400))" > "$NEXT"
+      python3 "$BACKUP_STATE" next "$state" > "$NEXT"
       rm -f "$state/phase" "$state/phase.tmp"
       continue
     fi
     rm -f "$REQUEST"
     # Chrome leaves these symlinks behind if a container is restarted mid-download.
     # No login browser may be active for this account at this point.
-    rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
+    if [ "$organize_only" != 3 ]; then
+      rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
+    fi
     # A full rescan preserves the downloaded item directories and archives
     # the old cursor outside the download folder before starting from oldest.
     if [ -f "$state/rescan-request" ]; then
@@ -110,10 +137,14 @@ while :; do
       rm -f "$state/rescan-request"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Starter fuld gennemgang; eksisterende filer bevares: $account" >> "$LOG"
     fi
+    mode=backup
+    if [ "$organize_only" = 1 ]; then mode=organize; fi
+    if [ "$organize_only" = 3 ]; then mode=check; fi
+    if [ -f "$state/repair-request" ]; then mode=repair; organize_only=2; rm -f "$state/repair-request"; fi
     set_phase starting
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
-    setsid /bin/sh "$0" "$account" --run "$organize_only" >> "$LOG" 2>&1 &
+    setsid /bin/sh "$0" "$account" --run "$organize_only" "$mode" >> "$LOG" 2>&1 &
     sync_pid=$!
     stopped=0
     while kill -0 "$sync_pid" 2>/dev/null; do
@@ -138,17 +169,18 @@ while :; do
     sync_pid=
     if [ "$stopped" = 1 ] || [ -f "$state/stop-request" ]; then result=130; fi
     rm -f "$state/stop-request"
-    echo "$result" > "$state/last-exit"
     date '+%Y-%m-%d %H:%M:%S' > "$state/last-run"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Færdig, exitkode $result" >> "$LOG"
+    set_phase finishing
+    python3 "$BACKUP_STATE" finish "$state" "$destination" --result "$result" >> "$LOG" 2>&1 &
+    history_pid=$!
+    while kill -0 "$history_pid" 2>/dev/null; do date +%s > "$state/heartbeat"; sleep 1; done
+    wait "$history_pid" || true
+    history_pid=
     rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
-    HOUR=${SYNC_HOUR:-3}
-    case "$HOUR" in *[!0-9]*|'') HOUR=3;; esac
-    TODAY=$(date '+%Y-%m-%d')
-    TARGET=$(date -d "$TODAY $HOUR:00:00" +%s 2>/dev/null || echo 0)
-    NOW=$(date +%s)
-    if [ "$TARGET" -le "$NOW" ]; then TARGET=$((TARGET + 86400)); fi
-    echo "$TARGET" > "$NEXT"
+    echo "$result" > "$state/last-exit"
+    python3 "$BACKUP_STATE" next "$state" > "$NEXT"
   fi
   sleep 10
 done
+

@@ -32,6 +32,7 @@ jobs:
           test "$(docker inspect --format '{{.State.Health.Status}}' fotoarkiv-ci)" = healthy
           docker exec fotoarkiv-ci python /container/smoke.py
           docker exec fotoarkiv-ci python /container/login-smoke.py
+          docker exec fotoarkiv-ci python /container/frontend-smoke.py
           docker exec fotoarkiv-ci google-chrome --headless --no-sandbox --disable-dev-shm-usage --dump-dom about:blank
       - name: Run archive, organization, progress and shutdown checks
         run: |
@@ -40,6 +41,10 @@ jobs:
           docker exec fotoarkiv-ci python /checks/test_archive_index.py
           docker exec fotoarkiv-ci python /checks/test_organization.py
           docker exec fotoarkiv-ci python /checks/test_progress.py
+          docker exec fotoarkiv-ci python /checks/test_account_tools.py
+          docker exec fotoarkiv-ci python /checks/test_login_wait.py
+          docker exec fotoarkiv-ci python /checks/test_tools_api.py
+          node test_language.cjs
           docker exec fotoarkiv-ci python /checks/test_stop.py
           docker exec fotoarkiv-ci python /checks/test_remove_account.py
       - name: Verify graceful stop
@@ -66,3 +71,4 @@ jobs:
         run: |
           docker logs fotoarkiv-ci || true
           docker rm -f fotoarkiv-ci || true
+

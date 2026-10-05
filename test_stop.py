@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as temp:
     source=(Path(__file__).parent/'account-worker.sh').read_text().replace('/control',str(control)).replace('/download',str(root/'download')).replace('/accounts',str(root/'accounts'))
     # Only literal runtime roots are replaced; both parent/child execute the same script.
     script.write_text(source)
-    env=dict(os.environ,PATH=str(fake)+':'+os.environ['PATH'])
+    env=dict(os.environ,PATH=str(fake)+':'+os.environ['PATH'],BACKUP_STATE=str(Path(__file__).parent/'dashboard/backup_state.py'))
     workers=[]
     try:
         for account in ['first@example.com','second@example.com']:
@@ -45,3 +45,4 @@ with tempfile.TemporaryDirectory() as temp:
         for _,_,process in workers:
             process.terminate()
         for _,_,process in workers:process.wait(timeout=10)
+

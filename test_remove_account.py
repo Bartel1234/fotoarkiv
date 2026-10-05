@@ -39,7 +39,7 @@ async def main():
             (scripts/Path(name).name).write_text(s)
         for name in ['gphotos-cdp','google-chrome']:
             p=fake/name;p.write_text('#!/bin/sh\nexec sleep 1000\n');p.chmod(0o755)
-        env=dict(os.environ,PATH=str(fake)+':'+os.environ['PATH'])
+        env=dict(os.environ,PATH=str(fake)+':'+os.environ['PATH'],BACKUP_STATE=str(ROOT/'dashboard/backup_state.py'))
         processes=[subprocess.Popen(['/bin/sh',str(scripts/name)],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL) for name in ['worker.sh','login-loop.sh']]
         portal.CONTROL=control;portal.PHOTOS=photos;portal.ACCOUNTS=accounts;portal.ACCOUNT_LIST=control/'accounts.txt'
         app=web.Application(middlewares=[portal.language]);app['account_lock']=asyncio.Lock()
@@ -76,3 +76,4 @@ async def main():
             for process in processes:process.wait(timeout=35)
 
 asyncio.run(main())
+

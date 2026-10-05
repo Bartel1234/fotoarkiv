@@ -638,7 +638,7 @@ func (s *Session) dlAndMove(ctx context.Context, location string) (string, error
 				break
 			}
 			st, err := os.Stat(filepath.Join(s.dlDir, clean))
-			if err != nil || !st.Mode().IsRegular() {
+			if err != nil || !st.Mode().IsRegular() || st.Size() == 0 {
 				allExist = false
 				break
 			}
@@ -789,3 +789,4 @@ func (s *Session) indexAlbums(ctx context.Context) error {
 	}
 	return errors.New("album indexing timed out; previous metadata preserved")
 }
+

@@ -6,7 +6,7 @@
 
 PhotoHarbor was previously called Fotoarkiv. Existing Compose service names, image repositories, data folders and internal metadata names are retained for upgrade compatibility.
 
-**v0.2.0-beta.5: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+**v0.2.0-beta.6: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
@@ -37,7 +37,7 @@ Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-templ
 
 ```sh
 mkdir -p /boot/config/plugins/dockerMan/templates-user
-curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.5/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta5.xml
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.6/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta5.xml
 ```
 
 In Unraid select **Docker → Add Container → Template → PhotoHarbor** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
@@ -46,7 +46,7 @@ In Unraid select **Docker → Add Container → Template → PhotoHarbor** under
 
 For updates without editing the version each time, set `image: ghcr.io/bartel1234/fotoarkiv:beta` and `pull_policy: always` in the existing stack. Use Compose Manager Update, or Compose Pull followed by Compose Up. The beta alias advances only after publishing a release with a verified matching image. Finish active backups first. Keep your existing persistent paths and .env values.
 
-Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.5/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
+Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.6/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
 
 ### Compose without a local build
 
@@ -144,7 +144,7 @@ Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` an
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.5
+release_version=v0.2.0-beta.6
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
@@ -184,3 +184,16 @@ The compatibility file uses the preserved `dashboard/` and `login/` build defini
 ## Build verification
 
 The GitHub Actions **Single-container build and smoke test** workflow builds the actual image and tests authenticated portal access, login assets, real Chrome tab streaming, mouse/keyboard/text input and browser closure, account worker startup, Chrome headless startup, media exports, organization and graceful stop. It does not authenticate to Google or verify a complete remote library backup.
+
+
+## Account tools (beta.6)
+
+Use **Settings and history** on an account to select backup weekdays and server-local start hour, pause automatic runs, inspect the last 50 runs, check local files, or retry missing downloads. Manual backup remains available while the schedule is paused. Existing schedules default to every day at `SYNC_HOUR`. History starts with this release.
+
+Checks compare catalog entries with local regular files and reject empty files. Google metadata also reports items without a known local media file; album-only entries can affect this count. These are existence/size checks, not content hashes or proof of complete Google coverage. Repair rescans the library, preserves existing media, and quarantines catalogued empty files in `.fotoarkiv/quarantine` before downloading replacements. It can take as long as a complete library traversal.
+
+Optional notifications use an HTTP(S) ntfy topic URL. Saving one enables failure messages; success messages are optional. Only generic outcome, exit code and new file count leave the server. Email addresses, media, filenames and login secrets are excluded. Clear the URL to disable. Delivery failure does not change the backup result.
+
+The gallery supports filename/album-title search, Google-date year/month filters, image/video filtering, date sorting, video thumbnails and previous/next preview controls. Unsupported video codecs retain the original downloadable file.
+
+The dashboard checks public GitHub release metadata every six hours and offers a release link when a newer version exists. Installation still uses **Update Stack**. A blocked sign-in now explains the active backup and lets the user stop it before continuing, without VNC.

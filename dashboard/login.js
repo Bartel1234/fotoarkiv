@@ -28,8 +28,13 @@ socket.onmessage=event=>{
     image.onerror=()=>send({type:'ack',session:data.session});
     image.src='data:image/jpeg;base64,'+data.image;
   } else if(data.type==='ready'){
+    document.getElementById('stop-backup').hidden=true;
     ready=true;status.textContent=t('Ready — click a Google field and sign in.','Klar — klik på et felt hos Google, og log ind.');
   } else if(data.type==='waiting')status.textContent=t('Starting Google sign-in…','Starter Google-login…');
+  else if(data.type==='waiting_backup'){
+    status.textContent=t('Backup is running. Stop it below to continue Google sign-in.','Backup kører. Afbryd den nedenfor for at fortsætte Google-login.');
+    document.getElementById('stop-backup').hidden=false;
+  }
   else if(data.type==='closed'){
     ended=true;ready=false;screen.getContext('2d').clearRect(0,0,screen.width,screen.height);
     status.textContent=t('Sign-in browser closed. You can return to PhotoHarbor.','Login-browseren er lukket. Du kan gå tilbage til PhotoHarbor.');
@@ -64,4 +69,15 @@ document.getElementById('done').addEventListener('click',async e=>{
     if(!response.ok)throw new Error('Close failed');
     status.textContent=t('Closing sign-in and saving the session…','Afslutter login og gemmer sessionen…');
   }catch(error){status.textContent=t('Could not close sign-in. Please try again.','Kunne ikke afslutte login. Prøv igen.');e.target.disabled=false;}
+});
+
+
+document.getElementById('stop-backup').textContent=t('Stop backup and continue sign-in','Afbryd backup og fortsæt login');
+document.getElementById('stop-backup').addEventListener('click',async e=>{
+  e.target.disabled=true;
+  try {
+    const response=await fetch('/api/accounts/'+encodeURIComponent(account)+'/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
+    if(!response.ok)throw Error(await response.text());
+    status.textContent=t('Stopping backup. Google sign-in will open when the profile is released…','Afbryder backup. Google-login åbner, når profilen er frigivet…');
+  } catch(error){status.textContent=error.message;e.target.disabled=false;}
 });
