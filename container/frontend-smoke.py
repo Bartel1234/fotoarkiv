@@ -11,7 +11,8 @@ async def main():
                 deadline=time.monotonic()+20
                 while True:
                     try:
-                        async with internal.get('http://127.0.0.1:9223/json/list')as response:pages=await response.json()
+                        async with internal.get('http://127.0.0.1:9223/json/list')as response:targets=await response.json()
+                        pages=[p for p in targets if p.get('type')=='page' and p.get('url')=='about:blank']
                         if pages:break
                     except aiohttp.ClientError:pass
                     assert time.monotonic()<deadline,'Frontend Chrome did not start';await asyncio.sleep(.2)
