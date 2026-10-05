@@ -16,13 +16,14 @@ async def main():
                     except aiohttp.ClientError:pass
                     assert time.monotonic()<deadline,'Frontend Chrome did not start';await asyncio.sleep(.2)
                 async with internal.ws_connect(pages[0]['webSocketDebuggerUrl'])as chrome:
-                    serial=0
+                    serial=0;events=[]
                     async def command(method,params=None):
                         nonlocal serial
                         serial+=1;number=serial
                         await chrome.send_json({'id':number,'method':method,'params':params or {}})
                         while True:
                             data=json.loads((await chrome.receive(timeout=15)).data)
+                            if data.get('method') in ('Runtime.exceptionThrown','Log.entryAdded'): events.append(data)
                             if data.get('id')==number:
                                 assert 'error' not in data,data
                                 return data.get('result',{})
@@ -33,8 +34,11 @@ async def main():
                     async def until(expression):
                         deadline=time.monotonic()+20
                         while not await evaluate(expression):
-                            assert time.monotonic()<deadline,expression
+                            if time.monotonic()>=deadline:
+                                print('UI diagnostics:',await evaluate("JSON.stringify({url:location.href,title:document.title,body:document.body.innerText.slice(0,3000),scripts:[...document.scripts].map(s=>s.src)})"),events[-10:])
+                                raise AssertionError(expression)
                             await asyncio.sleep(.1)
+                    await command('Runtime.enable');await command('Log.enable')
                     await command('Network.enable')
                     auth=base64.b64encode(('smoke:'+os.environ['APP_PASSWORD']).encode()).decode()
                     await command('Network.setExtraHTTPHeaders',{'headers':{'Authorization':'Basic '+auth}})
