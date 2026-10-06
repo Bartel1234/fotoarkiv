@@ -11,7 +11,21 @@ from urllib.parse import quote
 from aiohttp import web
 from PIL import Image, ImageOps, UnidentifiedImageError
 from zipstream import ZipStream, ZIP_STORED
-from archive_index import ArchiveIndex, query as query_index, album_members
+from archive_index import ArchiveIndex, query as query_index, album_members, range_members
+
+
+def date_filters(data):
+    from datetime import date
+    try:
+        year = int(data.get('year','0')); month = int(data.get('month','0'))
+        start, end = data.get('from',''), data.get('to','')
+        for value in (start, end):
+            if value and (not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value) or not date.fromisoformat(value)): raise ValueError()
+        if not 0 <= year <= 9999 or not 0 <= month <= 12 or (start and end and start > end): raise ValueError()
+    except (ValueError, TypeError): raise web.HTTPBadRequest(text='Invalid date range')
+    kind = data.get('kind','')
+    if kind not in ('','image','video'): raise web.HTTPBadRequest(text='Invalid media filter')
+    return year, month, start, end, kind
 
 ITEM = re.compile(r'^[A-Za-z0-9_-]{20,120}$')
 IMAGES = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif', '.bmp', '.tif', '.tiff'}
@@ -72,13 +86,11 @@ async def listing(request):
     if page<1 or page>100000:raise web.HTTPBadRequest(text='Ugyldigt sidetal')
     album=request.query.get('album','')[:200]
     search=request.query.get('q','').strip()[:100]
-    try:
-        year=int(request.query.get('year','0'));month=int(request.query.get('month','0'))
-    except ValueError: raise web.HTTPBadRequest(text='Invalid date filter')
-    kind=request.query.get('kind','');sort=request.query.get('sort','newest')
+    year,month,start,end,kind = date_filters(request.query)
+    sort=request.query.get('sort','newest')
     if not 0<=year<=9999 or not 0<=month<=12 or kind not in ('','image','video') or sort not in ('newest','oldest'): raise web.HTTPBadRequest(text='Invalid filter')
     target=await request.app['archive_index'].ensure(account,root)
-    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page,year,month,kind,sort)
+    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page,year,month,kind,sort,start,end)
     items=[]
     for item,name,size,kind,label,source in rows:
         suffix='/'.join(quote(part,safe='') for part in (account,item,name))
@@ -175,6 +187,31 @@ async def album_info(request):
     selected, total, filename = await album_selection(request, data)
     return web.json_response({'count':len(selected), 'bytes':total, 'filename':filename})
 
+
+async def range_selection(request, data):
+    root = account_root(request, data.get('account',''))
+    year, month, start, end, kind = date_filters(data)
+    if not year and not (start and end): raise web.HTTPBadRequest(text='Choose a year or both interval dates')
+    target = await request.app['archive_index'].ensure(data['account'], root)
+    rows = await asyncio.to_thread(range_members, target, year, month, start, end, kind)
+    def prepare():
+        selected, size = [], 0
+        for (relative,) in rows:
+            path = checked_path(root,relative)
+            if not path.is_file() or path.suffix.lower() not in IMAGES|VIDEOS: raise web.HTTPConflict(text='Files changed; refresh the gallery')
+            selected.append((path,str(path.relative_to(root))));size += path.stat().st_size
+        if not selected: raise web.HTTPNotFound(text='No local files in the selected date range')
+        return selected,size,'photoharbor-'+(str(year)+(f'-{month:02d}' if month else '') if year else start+'_'+end)+'.zip'
+    return await asyncio.to_thread(prepare)
+
+
+async def range_info(request):
+    if request.content_type != 'application/x-www-form-urlencoded' or (request.content_length or 0)>4096: raise web.HTTPBadRequest()
+    data = await request.post()
+    if not request.app['valid_token'](data.get('token','')): raise web.HTTPForbidden()
+    selected,size,filename = await range_selection(request,data)
+    return web.json_response({'count':len(selected),'bytes':size,'filename':filename})
+
 async def download_zip(request):
     if request.content_type != 'application/x-www-form-urlencoded' or (request.content_length or 0) > 100000:
         raise web.HTTPBadRequest(text='Ugyldig anmodning')
@@ -183,7 +220,9 @@ async def download_zip(request):
         raise web.HTTPForbidden(text='Ugyldig formular')
     account = data.get('account', '')
     filename = 'fotoarkiv-selection.zip'
-    if 'album' in data:
+    if data.get('export') == 'dates':
+        selected, total, filename = await range_selection(request, data)
+    elif 'album' in data:
         selected, total, filename = await album_selection(request, data)
     else:
         try:
@@ -234,4 +273,4 @@ def setup(app, photos_root, thumb_root, account_names, valid_token):
     app.router.add_get('/api/archive/thumb/{account}/{item}/{name}', thumbnail)
     app.router.add_post('/api/archive/zip', download_zip)
     app.router.add_post('/api/archive/album', album_info)
-
+    app.router.add_post('/api/archive/range', range_info)

@@ -22,7 +22,7 @@ def load(path, default):
 
 def settings(state):
     default = {'enabled': True, 'hour': int(os.environ.get('SYNC_HOUR', '3')), 'days': list(range(7)),
-               'notify_url': '', 'notify_success': False}
+               'notify_url': '', 'notify_success': False, 'min_free_gb': 2, 'min_free_percent': 2}
     default.update(load(state / 'settings.json', {}))
     return default
 
@@ -39,8 +39,14 @@ def validate(data):
     if len(url) > 1000 or (url and (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.fragment)):
         raise ValueError('Use an HTTP(S) ntfy topic URL without credentials')
     if not isinstance(data.get('notify_success', False), bool): raise ValueError('Invalid notification setting')
+    limits = {}
+    for key, default, maximum in [('min_free_gb', 2, 100000), ('min_free_percent', 2, 50)]:
+        value = data.get(key, default)
+        if type(value) not in (int, float) or not __import__('math').isfinite(value) or not 0 <= value <= maximum:
+            raise ValueError('Invalid free-space reserve')
+        limits[key] = value
     return {'enabled': enabled, 'hour': hour, 'days': sorted(set(days)), 'notify_url': url,
-            'notify_success': data.get('notify_success', False)}
+            'notify_success': data.get('notify_success', False), **limits}
 
 
 def next_run(config, now=None):
@@ -152,7 +158,7 @@ def finish(root, state, result):
     if result == 0 and current['mode'] in ('backup','repair'): atomic(state / 'last-success.json', entry)
     state.joinpath('current-run.json').unlink(missing_ok=True)
     config = settings(state)
-    if current['mode'] in ('backup','repair') and config['notify_url'] and (result not in (0, 130) or (result == 0 and config['notify_success'])):
+    if current['mode'] in ('backup','repair') and config['notify_url'] and (result not in (0, 130, 131) or (result == 0 and config['notify_success'])):
         import urllib.request
         summary = ('Backup completed' if result == 0 else 'Backup failed; check PhotoHarbor and Google sign-in')
         # Account addresses, file names, media and login secrets are never sent.

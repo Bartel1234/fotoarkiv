@@ -16,7 +16,7 @@ async def main():
         first=root/'accounts/first@example.com';first.mkdir(parents=True)
         second=root/'accounts/second@example.com';second.mkdir(parents=True)
         for name in ('start-request','rescan-request','organize-request'): (first/name).write_text('1')
-        app=web.Application();app.router.add_post('/api/accounts/{email}/{action}',dashboard.account_action)
+        app=web.Application();app['account_lock']=asyncio.Lock();app.router.add_post('/api/accounts/{email}/{action}',dashboard.account_action)
         async with TestClient(TestServer(app)) as client:
             response=await client.post('/api/accounts/first@example.com/stop',json={'token':'bad'});assert response.status==403
             assert not (first/'stop-request').exists()
@@ -27,3 +27,4 @@ async def main():
             response=await client.post('/api/accounts/other@example.com/stop',json={'token':dashboard.TOKEN});assert response.status==404
         print('Stop API rejects invalid tokens/unknown accounts and cancels only the selected account')
 asyncio.run(main())
+

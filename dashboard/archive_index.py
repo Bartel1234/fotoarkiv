@@ -11,7 +11,7 @@ from pathlib import Path
 ITEM=re.compile(r'^[A-Za-z0-9_-]{20,120}$')
 VIDEOS={'.mp4','.mov','.m4v','.webm','.avi','.mkv','.3gp'}
 MEDIA=VIDEOS|{'.jpg','.jpeg','.png','.webp','.gif','.heic','.heif','.bmp','.tif','.tiff'}
-SCHEMA=2
+SCHEMA=3
 
 def source_signature(root):
     def stamp(path):
@@ -72,6 +72,7 @@ def rebuild(root,target):
         columns = {row[1] for row in db.execute('PRAGMA table_info(files)')}
         for column in ('year','month'):
             if column not in columns: db.execute('ALTER TABLE files ADD COLUMN '+column+' INTEGER')
+        if 'day' not in columns: db.execute('ALTER TABLE files ADD COLUMN day TEXT')
         db.execute('CREATE INDEX IF NOT EXISTS files_calendar ON files(year,month,kind)')
         db.execute('BEGIN')
         db.execute('DELETE FROM files');db.execute('DELETE FROM members');db.execute('DELETE FROM albums')
@@ -79,7 +80,7 @@ def rebuild(root,target):
         for row,albums in records(root):
             try: calendar = datetime.strptime(row[6], '%d/%m/%Y %H:%M')
             except ValueError: calendar = datetime.fromtimestamp(row[3])
-            db.execute('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?,?)', (*row, calendar.year, calendar.month))
+            db.execute('INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (*row, calendar.year, calendar.month, calendar.date().isoformat()))
             for album in albums:
                 key=album['id'];title=album['title']
                 inserted=db.execute('INSERT OR IGNORE INTO members VALUES(?,?,?,?)',(key,row[0],row[1],row[3])).rowcount
@@ -95,7 +96,7 @@ def ready(target):
             return db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()==(str(SCHEMA),)
     except sqlite3.DatabaseError:return False
 
-def query(target,album,search,page,year=0,month=0,kind="",sort="newest"):
+def query(target,album,search,page,year=0,month=0,kind="",sort="newest",start='',end=''):
     with sqlite3.connect(target.as_uri()+'?mode=ro',uri=True) as db:
         db.create_function('casefold',1,lambda value:value.casefold(),deterministic=True)
         params=[]
@@ -112,12 +113,22 @@ def query(target,album,search,page,year=0,month=0,kind="",sort="newest"):
         if year: where+=' AND f.year=?';params.append(year)
         if month: where+=' AND f.month=?';params.append(month)
         if kind: where+=' AND f.kind=?';params.append(kind)
+        if start: where+=' AND f.day>=?';params.append(start)
+        if end: where+=' AND f.day<=?';params.append(end)
         if sort=='oldest': order=order.replace('DESC','ASC')
         total=db.execute('SELECT COUNT(*) FROM '+source+' WHERE '+where,params).fetchone()[0]
         rows=db.execute('SELECT f.id,f.name,f.size,f.kind,f.label,f.source FROM '+source+' WHERE '+where+' ORDER BY '+order+' LIMIT 48 OFFSET ?',params+[(page-1)*48]).fetchall()
         albums=[{'id':id,'title':title,'count':n} for id,title,n in db.execute('SELECT id,title,count FROM albums')]
         albums.sort(key=lambda a:a['title'].casefold())
         return rows,total,albums
+
+
+def range_members(target, year=0, month=0, start='', end='', kind=''):
+    with sqlite3.connect(target.as_uri()+'?mode=ro', uri=True) as db:
+        where, params = ['1'], []
+        for column, value, operator in [('year',year,'='),('month',month,'='),('day',start,'>='),('day',end,'<='),('kind',kind,'=')]:
+            if value: where.append(column+operator+'?'); params.append(value)
+        return db.execute('SELECT path FROM files WHERE '+' AND '.join(where)+' ORDER BY day,id,name',params).fetchall()
 
 class ArchiveIndex:
     def __init__(self,directory):
@@ -166,4 +177,3 @@ def album_members(target, album):
         if title is None:return None,[]
         rows=db.execute('SELECT f.path FROM members m JOIN files f ON f.id=m.id AND f.name=m.name WHERE m.album=? ORDER BY m.stamp,m.id,m.name',(album,)).fetchall()
         return title[0],[row[0] for row in rows]
-

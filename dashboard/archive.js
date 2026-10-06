@@ -28,7 +28,7 @@ function archivePreview(item) {
   archiveEl('archive-download').download = item.name;
   archiveState.preview=item;
   const position=archiveState.items.indexOf(item);
-  archiveEl('preview-prev').disabled=position<=0;archiveEl('preview-next').disabled=position>=archiveState.items.length-1;
+  archiveEl('preview-prev').disabled=position<=0&&archiveState.page<=1;archiveEl('preview-next').disabled=position>=archiveState.items.length-1&&archiveState.page*48>=archiveState.total;
   if(!dialog.open)dialog.showModal();
 }
 
@@ -80,7 +80,7 @@ async function archiveLoad() {
   archiveEl('archive-grid').textContent = I18n.t('Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.');
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
-      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value,year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,kind:archiveEl('archive-kind').value,sort:archiveEl('archive-sort').value});
+      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value,year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,kind:archiveEl('archive-kind').value,sort:archiveEl('archive-sort').value,from:archiveEl('archive-from').value,to:archiveEl('archive-to').value});
     const response = await fetch('/api/archive?' + params, {cache: 'no-store',signal});
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
@@ -97,6 +97,7 @@ async function archiveLoad() {
     archiveState.items = data.items;
     archiveState.total = data.total;
     archiveRender();
+    return true;
   } catch (error) {
     if(error.name==='AbortError' || requestNumber!==archiveRequestNumber) return;
     archiveEl('archive-grid').textContent = I18n.t('Kunne ikke hente filer.');
@@ -206,11 +207,40 @@ archiveEl('archive-album-download').addEventListener('click', async () => {
 });
 
 
-for(const id of ['archive-year','archive-month','archive-kind','archive-sort'])archiveEl(id).addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
+for(const id of ['archive-year','archive-month','archive-kind','archive-sort','archive-from','archive-to'])archiveEl(id).addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
 archiveEl('archive-reset').addEventListener('click',()=>{
   archiveEl('archive-year').value='';archiveEl('archive-month').value='0';archiveEl('archive-kind').value='';archiveEl('archive-sort').value='newest';archiveEl('archive-search').value='';archiveEl('archive-album').value='';
+  archiveEl('archive-from').value='';archiveEl('archive-to').value='';
   archiveState.page=1;archiveState.selected.clear();archiveLoad();
 });
-function previewStep(delta){const n=archiveState.items.indexOf(archiveState.preview)+delta;if(n>=0&&n<archiveState.items.length)archivePreview(archiveState.items[n]);}
+let previewLoading=false;
+async function previewStep(delta){
+  if(previewLoading)return;
+  const n=archiveState.items.indexOf(archiveState.preview)+delta;
+  if(n>=0&&n<archiveState.items.length){archivePreview(archiveState.items[n]);return;}
+  if((delta<0&&archiveState.page<=1)||(delta>0&&archiveState.page*48>=archiveState.total))return;
+  previewLoading=true;
+  try{archiveState.page+=delta;const loaded=await archiveLoad();if(loaded&&archiveState.items.length)archivePreview(archiveState.items[delta>0?0:archiveState.items.length-1]);}
+  finally{previewLoading=false;}
+}
 archiveEl('preview-prev').addEventListener('click',()=>previewStep(-1));archiveEl('preview-next').addEventListener('click',()=>previewStep(1));
 archiveEl('archive-preview').addEventListener('keydown',event=>{if(event.target.tagName==='VIDEO')return;if(event.key==='ArrowLeft')previewStep(-1);if(event.key==='ArrowRight')previewStep(1);});
+
+let swipeStart=null;
+archiveEl('archive-media').addEventListener('touchstart',event=>{swipeStart=event.touches.length===1&&event.target.tagName==='IMG'?{x:event.touches[0].clientX,y:event.touches[0].clientY}:null;},{passive:true});
+archiveEl('archive-media').addEventListener('touchend',event=>{if(!swipeStart||!event.changedTouches.length)return;const dx=event.changedTouches[0].clientX-swipeStart.x,dy=event.changedTouches[0].clientY-swipeStart.y;swipeStart=null;if(Math.abs(dx)>60&&Math.abs(dy)<40)previewStep(dx<0?1:-1);},{passive:true});
+
+archiveEl('archive-range-download').addEventListener('click',async()=>{
+  const button=archiveEl('archive-range-download');button.disabled=true;
+  try{
+    const fields={token:archiveEl('archive-token').value,account:archiveState.account,export:'dates',year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,from:archiveEl('archive-from').value,to:archiveEl('archive-to').value,kind:archiveEl('archive-kind').value};
+    archiveEl('archive-message').textContent=I18n.t('Forbereder datoeksport…');
+    const response=await fetch('/api/archive/range',{method:'POST',body:new URLSearchParams(fields)});if(!response.ok)throw Error(await response.text());
+    const info=await response.json();
+    if(!window.confirm(I18n.t('Hente hele dette interval? ')+archiveFormat(info.count)+I18n.t(' filer')+' · '+archiveSize(info.bytes)))return;
+    const form=document.createElement('form');form.method='post';form.action='/api/archive/zip';form.target='archive-download-frame';form.hidden=true;
+    for(const[key,value]of Object.entries(fields)){const input=document.createElement('input');input.type='hidden';input.name=key;input.value=value;form.append(input);}
+    document.body.append(form);form.submit();form.remove();archiveEl('archive-message').textContent=I18n.t('Datoeksport startet: ')+info.filename;
+  }catch(error){archiveEl('archive-message').textContent=error.message;}
+  finally{button.disabled=false;}
+});

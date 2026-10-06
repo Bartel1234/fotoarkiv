@@ -2,6 +2,7 @@
 set -u
 account=$1
 BACKUP_STATE=${BACKUP_STATE:-/app/backup_state.py}
+LIBRARY_TOOLS=${LIBRARY_TOOLS:-$(dirname "$BACKUP_STATE")/library_tools.py}
 if [ "$account" = legacy ]; then
   state=/control
   destination=/download
@@ -21,7 +22,25 @@ run_sync() {
   if [ "$organize_only" = 2 ]; then python3 "$BACKUP_STATE" repair "$state" "$destination" || return 1; fi
   set_phase checking
   python3 "$BACKUP_STATE" check "$state" "$destination" || return 1
+  python3 "$LIBRARY_TOOLS" coverage "$state" "$destination" || return 1
+  if [ "$organize_only" = 4 ] || [ "$organize_only" = 5 ]; then
+    set_phase checking_content
+    command=content
+    if [ "$organize_only" = 5 ]; then command=duplicates; fi
+    python3 "$LIBRARY_TOOLS" "$command" "$state" "$destination"
+    return $?
+  fi
+  if [ "$organize_only" = 6 ]; then
+    set_phase reviewing_albums
+    python3 "$LIBRARY_TOOLS" approve-albums "$state" "$destination" --revision "$(cat "$state/album-approve-revision")"
+    return $?
+  fi
   if [ "$organize_only" = 3 ]; then return 0; fi
+  python3 "$LIBRARY_TOOLS" storage "$state" "$destination"
+  space_result=$?
+  if [ "$space_result" = 3 ]; then return 132; fi
+  if [ "$space_result" != 0 ]; then return 1; fi
+  python3 "$LIBRARY_TOOLS" snapshot "$state" "$destination" || return 1
   set_phase indexing
   echo "Henter albums og Google-datoer"
   if TMPDIR="$profile_tmp" gphotos-cdp -dev -headless -index-albums -dldir "$destination"; then
@@ -30,6 +49,8 @@ run_sync() {
       echo "FEJL: Organisering afbrudt; originalfiler bevares"
       return 1
     fi
+    python3 "$LIBRARY_TOOLS" albums "$state" "$destination" || return 1
+    python3 "$LIBRARY_TOOLS" coverage "$state" "$destination" || return 1
   else
     index_result=1
     echo "FEJL: Kunne ikke opdatere albumindeks. Tidligere indeks og filer bevares."
@@ -49,6 +70,8 @@ run_sync() {
   fi
   set_phase checking
   python3 "$BACKUP_STATE" check "$state" "$destination" || return 1
+  python3 "$LIBRARY_TOOLS" coverage "$state" "$destination" || return 1
+  python3 "$LIBRARY_TOOLS" albums "$state" "$destination" || return 1
   if [ "$index_result" != 0 ]; then return 1; fi
   return "$download_result"
 }
@@ -82,6 +105,9 @@ cleanup() {
     wait "$sync_pid" 2>/dev/null || true
   fi
   if [ -n "$history_pid" ]; then wait "$history_pid" 2>/dev/null || true; fi
+  if [ "${mode:-}" = content ] || [ "${mode:-}" = duplicates ]; then
+    python3 "$LIBRARY_TOOLS" interrupted "$state" "$destination" >> "$LOG" 2>&1 || true
+  fi
   rm -f "$RUNNING" "$state/phase" "$state/phase.tmp"
   exit 0
 }
@@ -98,15 +124,19 @@ while :; do
   DUE=$(cat "$NEXT" 2>/dev/null || echo 0)
   case "$DUE" in *[!0-9]*|'') DUE=0;; esac
   if [ -f "$state/stop-request" ] && [ ! -f "$RUNNING" ]; then
-    rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request"
+    rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request" "$state/content-request" "$state/duplicates-request" "$state/album-approve-request"
     echo 130 > "$state/last-exit"
     python3 "$BACKUP_STATE" next "$state" > "$NEXT"
   fi
-  if [ -f "$REQUEST" ] || { [ "$DUE" -gt 0 ] && [ "$NOW" -ge "$DUE" ]; }; then
+  python3 "$LIBRARY_TOOLS" storage "$state" "$destination" >> "$LOG" 2>&1 || true
+  if [ -f "$REQUEST" ] || { [ ! -f "$state/paused" ] && [ "$DUE" -gt 0 ] && [ "$NOW" -ge "$DUE" ]; }; then
     organize_only=0
     if [ -f "$state/organize-request" ]; then organize_only=1; rm -f "$state/organize-request"; fi
     if [ -f "$state/verify-request" ]; then organize_only=3; rm -f "$state/verify-request"; fi
-    while [ "$organize_only" != 3 ] && [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
+    if [ -f "$state/content-request" ]; then organize_only=4; rm -f "$state/content-request"; fi
+    if [ -f "$state/duplicates-request" ]; then organize_only=5; rm -f "$state/duplicates-request"; fi
+    if [ -f "$state/album-approve-request" ]; then organize_only=6; rm -f "$state/album-approve-request"; fi
+    while [ "$organize_only" -lt 3 ] && [ "$(cat /control/login-active 2>/dev/null)" = "$account" ]; do
       set_phase waiting_login
       echo "$(date '+%Y-%m-%d %H:%M:%S') Venter på at login-browseren lukkes: $account" >> "$LOG"
       date +%s > "$state/heartbeat"
@@ -114,7 +144,7 @@ while :; do
       sleep 2
     done
     if [ -f "$state/stop-request" ]; then
-      rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request"
+      rm -f "$REQUEST" "$state/stop-request" "$state/rescan-request" "$state/organize-request" "$state/verify-request" "$state/repair-request" "$state/content-request" "$state/duplicates-request" "$state/album-approve-request"
       echo "130" > "$state/last-exit"
       echo "$(date '+%Y-%m-%d %H:%M:%S') Backup afbrudt før start: $account" >> "$LOG"
       python3 "$BACKUP_STATE" next "$state" > "$NEXT"
@@ -124,7 +154,7 @@ while :; do
     rm -f "$REQUEST"
     # Chrome leaves these symlinks behind if a container is restarted mid-download.
     # No login browser may be active for this account at this point.
-    if [ "$organize_only" != 3 ]; then
+    if [ "$organize_only" -lt 3 ]; then
       rm -f "$profile_tmp/gphotos-cdp/SingletonLock" "$profile_tmp/gphotos-cdp/SingletonCookie" "$profile_tmp/gphotos-cdp/SingletonSocket"
     fi
     # A full rescan preserves the downloaded item directories and archives
@@ -145,15 +175,33 @@ while :; do
     mode=backup
     if [ "$organize_only" = 1 ]; then mode=organize; fi
     if [ "$organize_only" = 3 ]; then mode=check; fi
+    if [ "$organize_only" = 4 ]; then mode=content; fi
+    if [ "$organize_only" = 5 ]; then mode=duplicates; fi
+    if [ "$organize_only" = 6 ]; then mode=albums; fi
     if [ -f "$state/repair-request" ]; then mode=repair; organize_only=2; rm -f "$state/repair-request"; fi
     set_phase starting
     date '+%Y-%m-%d %H:%M:%S' > "$RUNNING"
+    echo "$mode" > "$state/run-mode"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Starter synkronisering: $account" >> "$LOG"
     setsid /bin/sh "$0" "$account" --run "$organize_only" "$mode" >> "$LOG" 2>&1 &
     sync_pid=$!
     stopped=0
+    last_space=0
     while kill -0 "$sync_pid" 2>/dev/null; do
       date +%s > "$state/heartbeat"
+      now_space=$(date +%s)
+      if [ "$organize_only" -lt 3 ] && [ $((now_space-last_space)) -ge 10 ]; then
+        last_space=$now_space
+        python3 "$LIBRARY_TOOLS" storage "$state" "$destination" >> "$LOG" 2>&1
+        space_result=$?
+        if [ "$space_result" = 3 ]; then
+          echo storage > "$state/paused"
+          echo 1 > "$state/stop-request"
+        elif [ "$space_result" != 0 ]; then
+          echo storage-check-failed > "$state/paused"
+          echo 1 > "$state/stop-request"
+        fi
+      fi
       if [ -f "$state/stop-request" ]; then
         stopped=1
         set_phase stopping
@@ -173,7 +221,13 @@ while :; do
     result=$?
     sync_pid=
     if [ "$stopped" = 1 ] || [ -f "$state/stop-request" ]; then result=130; fi
+    if [ "$stopped" = 1 ] && [ -f "$state/paused" ]; then
+      case "$(cat "$state/paused")" in user) result=131;; *) result=132;; esac
+    elif [ "$result" = 132 ]; then echo storage > "$state/paused"; fi
     rm -f "$state/stop-request"
+    if [ "$mode" = content ] || [ "$mode" = duplicates ]; then
+      python3 "$LIBRARY_TOOLS" interrupted "$state" "$destination" >> "$LOG" 2>&1 || true
+    fi
     date '+%Y-%m-%d %H:%M:%S' > "$state/last-run"
     echo "$(date '+%Y-%m-%d %H:%M:%S') Færdig, exitkode $result" >> "$LOG"
     set_phase finishing

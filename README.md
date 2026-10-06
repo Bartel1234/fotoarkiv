@@ -6,7 +6,7 @@
 
 PhotoHarbor was previously called Fotoarkiv. Existing Compose service names, image repositories, data folders and internal metadata names are retained for upgrade compatibility.
 
-**v0.2.0-beta.6: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+**v0.2.0-beta.7: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
@@ -37,7 +37,7 @@ Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-templ
 
 ```sh
 mkdir -p /boot/config/plugins/dockerMan/templates-user
-curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.6/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta5.xml
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.7/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta7.xml
 ```
 
 In Unraid select **Docker → Add Container → Template → PhotoHarbor** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
@@ -46,7 +46,7 @@ In Unraid select **Docker → Add Container → Template → PhotoHarbor** under
 
 For updates without editing the version each time, set `image: ghcr.io/bartel1234/fotoarkiv:beta` and `pull_policy: always` in the existing stack. Use Compose Manager Update, or Compose Pull followed by Compose Up. The beta alias advances only after publishing a release with a verified matching image. Finish active backups first. Keep your existing persistent paths and .env values.
 
-Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.6/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
+Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.7/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
 
 ### Compose without a local build
 
@@ -144,7 +144,7 @@ Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` an
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.6
+release_version=v0.2.0-beta.7
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
@@ -197,3 +197,21 @@ Optional notifications use an HTTP(S) ntfy topic URL. Saving one enables failure
 The gallery supports filename/album-title search, Google-date year/month filters, image/video filtering, date sorting, video thumbnails and previous/next preview controls. Unsupported video codecs retain the original downloadable file.
 
 The dashboard checks public GitHub release metadata every six hours and offers a release link when a newer version exists. Installation still uses **Update Stack**. A blocked sign-in now explains the active backup and lets the user stop it before continuing, without VNC.
+
+## Library safety and management (beta.7)
+
+Account cards now offer **Pause backup** and **Resume backup**. Pausing stops the account job at its saved download position and blocks automatic runs, including after a container restart. Resume checks free space and continues from the saved cursor; an interrupted item may be downloaded again. Album indexing is repeated on resume to keep the metadata current. **Stop backup** ends the run and releases the pause; the configured automatic schedule remains enabled. Pause/resume is for backup/repair jobs; local checks can be stopped and rerun.
+
+Under **Settings and history**, set minimum free GB and percent. The larger reserve applies (defaults: 2 GB / 2%). The worker measures approximately every ten seconds and pauses on low space or a failed measurement. Warnings appear near the account and in settings. Both values at zero disable the reserve. Values come from the mounted backup filesystem and cannot predict Unraid disk allocation or guarantee enough space for an arbitrarily large file. Resuming after a space pause requires releasing space or adjusting the reserve.
+
+**Coverage by year and album** compares unique media IDs in the latest complete Google metadata index with nonempty local files. It updates during backup and local verification. It includes album-only items, which the main-library downloader may not fetch; it is not proof of Google completeness.
+
+**Check file contents** calculates SHA-256, records the first observed checksum, compares later checks, decodes supported photos, and uses ffmpeg to inspect video/audio contents with a five-minute limit per file. A changed checksum means bytes changed since the first check, not automatically that the file is corrupt. Unsupported formats and timeouts remain unverified. The first baseline cannot establish that bytes match Google's originals. Checks are manual, may take hours, run outside the HTTP process and change no media files. Up to 200 issue details are shown. Stopped checks retain partial results and can be rerun.
+
+**Find duplicates** groups identical current SHA-256 values and sizes within the selected account. Registered album references and identical hard-link inodes are excluded. The report shows up to 200 groups / 20 paths per group and total extra file counts and logical size, not guaranteed recoverable physical space. No duplicates are automatically removed.
+
+**Review album changes** shows additions, removals, titles and membership changes against the previous accepted metadata. Review updates after backup organization. Type the account name to approve. Only old registered album references with an identical primary file are moved into `.fotoarkiv/album-history/<revision>/Albums/`; primaries are preserved and changes never reach Google. Keep this history until you have checked the new albums. You can restore references by moving the retained files back through the server's file manager. References no longer registered before beta.7 cannot be inferred safely and remain untouched.
+
+**Export settings / Import settings** is a reviewed JSON backup of account names, schedules and reserves. It excludes passwords, Google browser profiles, notification destinations, media and host mount paths. Import previews accounts and requires acknowledgement; it updates settings and can add account folders, retaining accounts not listed in the file. Stop jobs before restoring settings. Existing notification URLs are preserved; enter URLs manually for new accounts. On a new installation, configure mounts/password normally and sign in to each restored account.
+
+The gallery adds inclusive **From date / To date** filters and **Download year or date range**. Date ZIPs contain all matching local files across pages and use Google's calendar dates when known, otherwise the local download date. Year/month, both interval dates and optional media type apply together; album/search/manual selections do not apply. The portal confirms counts and size before streaming without a temporary server ZIP. Complete date exports have no manual 500-file/10-GB limit; allow enough browser space and time. Mobile controls have larger touch targets and photo previews support horizontal swipe and previous/next across pages; video controls retain their native gestures.

@@ -17,6 +17,7 @@ from archive import setup as setup_archive
 from progress import progress
 from login_view import setup as setup_login
 from backup_state import settings, validate, atomic, load, next_run
+from library_tools import storage, album_review
 
 CONTROL = Path('/control')
 PHOTOS = Path(os.environ.get('PHOTOS_DIR', '/photos'))
@@ -176,8 +177,18 @@ def account_summaries():
     return result
 
 
+def load_text(path):
+    try: return path.read_text().strip()
+    except OSError: return ""
+
+
 def account_details(state):
     return {'settings': settings(state), 'history': load(state/'history.json', []),
+            'paused': (state/'paused').exists(), 'pause_reason': load_text(state/'paused'),
+            'run_mode': load_text(state/'run-mode') or 'backup',
+            'storage': load(state/'storage.json', None), 'coverage': load(state/'coverage.json', None),
+            'content': load(state/'content.json', None), 'duplicates': load(state/'duplicates.json', None),
+            'album_review': load(state/'album-review.json', None),
             'verification': load(state/'verification.json', None),
             'last_success': load(state/'last-success.json', None),
             'notification': load(state/'notification-status.json', None)}
@@ -287,6 +298,7 @@ async def start(request):
     body = parse_qs(await request.text())
     if not hmac.compare_digest(body.get('token', [''])[0], TOKEN):
         raise web.HTTPForbidden(text='Ugyldig formular')
+    if (CONTROL/'paused').exists(): raise web.HTTPConflict(text='Resume the paused backup from the account card')
     if not (CONTROL / 'running').exists():
         request_login_close('legacy')
         (CONTROL / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
@@ -313,7 +325,7 @@ async def remove_account(request, email, data):
             (state / name).unlink(missing_ok=True)
         (state / 'removal-pending').write_text('1')
         request_login_close(email)
-        for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request'):
+        for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request', 'content-request', 'duplicates-request', 'album-approve-request'):
             (state / name).unlink(missing_ok=True)
         try:
             deadline = time.monotonic() + REMOVAL_TIMEOUT
@@ -385,49 +397,148 @@ async def account_action(request):
         raise web.HTTPConflict(text='Kontoen er ved at blive fjernet')
     state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
     state.mkdir(parents=True, exist_ok=True)
-    if action == 'settings':
-        try: config = validate(data.get('settings', {}))
-        except (ValueError, TypeError, AttributeError) as error: raise web.HTTPBadRequest(text=str(error))
-        atomic(state/'settings.json', config)
-        return web.json_response({'ok':True, 'settings':config})
-    if action == 'login':
-        if read('login-active') != email:
-            (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
-    elif action == 'close-login':
-        request_login_close(email)
-    elif action == 'stop':
-        state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
-        (state / 'stop-request').write_text(str(int(time.time())), encoding='utf-8')
-        for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request'):
-            (state / name).unlink(missing_ok=True)
-    elif action in ('start', 'rescan', 'organize', 'verify', 'repair'):
-        state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
-        if action in ('verify', 'repair'):
-            if (state/'running').exists() or (state/'start-request').exists():
-                raise web.HTTPConflict(text='Wait for the current job to finish')
-            if action == 'verify': (state/'verify-request').write_text('1')
-            else:
-                (state/'repair-request').write_text('1')
-                (state/'rescan-request').write_text('1')
-        if action == 'organize':
-            if (state / 'running').exists():
-                raise web.HTTPConflict(text='Vent til den aktuelle backup er afsluttet')
-            (state / 'organize-request').write_text(str(int(time.time())), encoding='utf-8')
-        if action == 'rescan':
-            if (state / 'running').exists():
-                raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
-            (state / 'rescan-request').write_text(str(int(time.time())), encoding='utf-8')
-        if action != 'verify': request_login_close(email)
-        (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
-    else:
-        raise web.HTTPNotFound()
-    return web.json_response({'ok': True})
+    async with request.app['account_lock']:
+        if email != 'legacy' and (email not in account_names() or (state/'removal-pending').exists()):
+            raise web.HTTPConflict(text='Account membership changed; refresh the portal')
+        if action == 'settings':
+            try: config = validate(data.get('settings', {}))
+            except (ValueError, TypeError, AttributeError) as error: raise web.HTTPBadRequest(text=str(error))
+            atomic(state/'settings.json', config)
+            return web.json_response({'ok':True, 'settings':config})
+        if action == 'login':
+            if read('login-active') != email:
+                (CONTROL / 'login-request').write_text(f'{email} {int(time.time())}\n', encoding='utf-8')
+        elif action == 'close-login':
+            request_login_close(email)
+        elif action == 'pause':
+            if not (state/'running').exists() or load_text(state/'run-mode') not in ('backup','repair'):
+                raise web.HTTPConflict(text='Only an active backup can be paused')
+            (state/'paused').write_text('user')
+            (state/'stop-request').write_text('1')
+            (state/'start-request').unlink(missing_ok=True)
+        elif action == 'resume':
+            if not (state/'paused').exists() or (state/'running').exists() or (state/'stop-request').exists():
+                raise web.HTTPConflict(text='Wait until the paused backup has stopped')
+            root = PHOTOS if email == 'legacy' else PHOTOS/email
+            if (await asyncio.to_thread(storage, root, state))['low']:
+                raise web.HTTPConflict(text='Free more disk space or adjust the reserve before resuming')
+            (state/'paused').unlink()
+            request_login_close(email)
+            (state/'start-request').write_text('1')
+        elif action == 'stop':
+            state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+            (state / 'stop-request').write_text(str(int(time.time())), encoding='utf-8')
+            (state/'paused').unlink(missing_ok=True)
+            for name in ('start-request', 'rescan-request', 'organize-request', 'verify-request', 'repair-request', 'content-request', 'duplicates-request', 'album-approve-request'):
+                (state / name).unlink(missing_ok=True)
+        elif action in ('start', 'rescan', 'organize', 'verify', 'repair', 'content', 'duplicates', 'approve-albums'):
+            state = CONTROL if email == 'legacy' else CONTROL / 'accounts' / email
+            if action in ('verify', 'repair', 'content', 'duplicates', 'approve-albums'):
+                if (state/'running').exists() or (state/'start-request').exists():
+                    raise web.HTTPConflict(text='Wait for the current job to finish')
+                if action == 'approve-albums':
+                    root = PHOTOS if email == 'legacy' else PHOTOS/email
+                    review = await asyncio.to_thread(album_review, root, state)
+                    if data.get('confirmation') != email or data.get('revision') != review.get('revision'):
+                        raise web.HTTPConflict(text='Review album changes and confirm the account before applying')
+                    (state/'album-approve-revision').write_text(review['revision'])
+                    (state/'album-approve-request').write_text('1')
+                elif action in ('verify','content','duplicates'): (state/({'verify':'verify','content':'content','duplicates':'duplicates'}[action]+'-request')).write_text('1')
+                else:
+                    (state/'repair-request').write_text('1')
+                    (state/'rescan-request').write_text('1')
+            if action == 'organize':
+                if (state / 'running').exists():
+                    raise web.HTTPConflict(text='Vent til den aktuelle backup er afsluttet')
+                (state / 'organize-request').write_text(str(int(time.time())), encoding='utf-8')
+            if action == 'rescan':
+                if (state / 'running').exists():
+                    raise web.HTTPConflict(text='Vent til den aktuelle synkronisering er afsluttet')
+                (state / 'rescan-request').write_text(str(int(time.time())), encoding='utf-8')
+            if action in ('start','rescan','repair'): (state/'paused').unlink(missing_ok=True)
+            if action not in ('verify','content','duplicates','approve-albums'): request_login_close(email)
+            (state / 'start-request').write_text(str(int(time.time())), encoding='utf-8')
+        else:
+            raise web.HTTPNotFound()
+        return web.json_response({'ok': True})
 
 
 def version_key(version):
     match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?', version)
     if not match: return None
     return tuple(map(int, match.groups()[:3])) + (int(match[4]) if match[4] else 10**9,)
+
+
+def configuration_export():
+    accounts = []
+    for email in ['legacy', *account_names()]:
+        state = CONTROL if email == 'legacy' else CONTROL/'accounts'/email
+        config = settings(state)
+        config['notify_url'] = ''  # Topic URLs can contain secrets; re-enter them after restoring.
+        accounts.append({'email': email, 'settings': config})
+    return {'format': 'photoharbor-settings', 'schema': 1, 'version': APP_VERSION, 'accounts': accounts}
+
+
+def configuration_validate(document):
+    if not isinstance(document, dict) or document.get('format') != 'photoharbor-settings' or document.get('schema') != 1:
+        raise ValueError('Invalid PhotoHarbor settings backup')
+    entries = document.get('accounts')
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 128: raise ValueError('Invalid account list')
+    seen, result = set(), []
+    for entry in entries:
+        if not isinstance(entry, dict): raise ValueError('Invalid account')
+        email = entry.get('email', '')
+        if not isinstance(email, str) or len(email) > 128 or (email != 'legacy' and not EMAIL.fullmatch(email)) or email != email.lower() or email in seen:
+            raise ValueError('Invalid or duplicate account')
+        seen.add(email)
+        config = validate(entry.get('settings', {}))
+        config['notify_url'] = ''
+        result.append({'email': email, 'settings': config})
+    return result
+
+
+async def configuration_action(request):
+    if request.content_type != 'application/json' or (request.content_length or 0) > 262144: raise web.HTTPBadRequest()
+    try: data = await request.json()
+    except ValueError: raise web.HTTPBadRequest()
+    if not isinstance(data, dict) or not hmac.compare_digest(str(data.get('token','')), TOKEN): raise web.HTTPForbidden()
+    action = request.match_info['action']
+    if action == 'export':
+        return web.json_response(configuration_export(), headers={'Content-Disposition':'attachment; filename="photoharbor-settings.json"','Cache-Control':'no-store'})
+    try: entries = configuration_validate(data.get('document'))
+    except (ValueError, TypeError, AttributeError) as error: raise web.HTTPBadRequest(text=str(error))
+    if action == 'preview':
+        return web.json_response({'accounts':[{'email': e['email'], 'new': e['email'] != 'legacy' and e['email'] not in account_names()} for e in entries]})
+    if data.get('confirmation') != 'IMPORT': raise web.HTTPBadRequest(text='Confirm the settings restore')
+    async with request.app['account_lock']:
+        for entry in entries:
+            email = entry['email']; state = CONTROL if email == 'legacy' else CONTROL/'accounts'/email
+            if any((state/name).exists() for name in ('running','start-request','removal-pending')):
+                raise web.HTTPConflict(text='Stop account jobs before restoring settings')
+            if email != 'legacy': removal_paths(email)
+        names = account_names(); previous = []
+        try:
+            for entry in entries:
+                email = entry['email']; state = CONTROL if email == 'legacy' else CONTROL/'accounts'/email
+                if email != 'legacy':
+                    for folder in (state, ACCOUNTS/email/'gphotos-cdp', PHOTOS/email):
+                        if folder.is_symlink(): raise web.HTTPConflict(text='Invalid account folder')
+                        folder.mkdir(parents=True, exist_ok=True)
+                    if email not in names: names.append(email)
+                path = state/'settings.json'
+                previous.append((path, path.read_bytes() if path.exists() else None))
+                config = entry['settings']
+                # Existing notification destinations are preserved, never imported from a file.
+                config['notify_url'] = settings(state)['notify_url']
+                atomic(path, config)
+            tmp = ACCOUNT_LIST.with_suffix('.tmp'); tmp.write_text(''.join(e+'\n' for e in names)); tmp.replace(ACCOUNT_LIST)
+        except Exception:
+            for path, original in previous:
+                if original is None: path.unlink(missing_ok=True)
+                else: path.write_bytes(original)
+            raise
+        _account_cache['at'] = 0
+    return web.json_response({'ok': True, 'accounts': len(entries)})
 
 async def release_watch(app):
     # Public release metadata only. No user/account data is sent to GitHub.
@@ -470,7 +581,8 @@ if __name__ == '__main__':
     app.router.add_get('/{name:style.css|app.js|enhancements.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
-    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove|settings|verify|repair}', account_action)
+    app.router.add_post('/api/config/{action:export|preview|restore}', configuration_action)
+    app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove|settings|verify|repair|pause|resume|content|duplicates|approve-albums}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))
     setup_login(app, CONTROL, account_names, TOKEN,
@@ -479,4 +591,3 @@ if __name__ == '__main__':
         raise web.HTTPNotFound()
     app.router.add_route('*', '/{tail:.*}', missing)
     web.run_app(app, host='0.0.0.0', port=8787)
-

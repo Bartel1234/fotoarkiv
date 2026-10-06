@@ -63,6 +63,13 @@ async def main():
             response=await client.post('/api/archive/zip',data=fields);assert response.status==200
             with zipfile.ZipFile(io.BytesIO(await response.read())) as z:
                 assert len(z.namelist())==503 and z.testzip() is None
+            dates={'token':'test-token','account':'test@example.com','export':'dates','from':'2003-01-01','to':'2003-01-01'}
+            response=await client.post('/api/archive/range',data=dates);assert response.status==200 and (await response.json())['count']==503
+            response=await client.post('/api/archive/zip',data=dates);assert response.status==200
+            with zipfile.ZipFile(io.BytesIO(await response.read()))as z:assert len(z.namelist())==503 and z.testzip()is None
+            for changes,code in [({'token':'bad'},403),({'account':'other@example.com'},404),({'from':'2003-02-31'},400),({'to':'2002-01-01'},400),({'from':'','to':''},400),({'from':'2004-01-01','to':'2004-01-01'},404)]:
+                response=await client.post('/api/archive/range',data={**dates,**changes});assert response.status==code
+            response=await client.get('/api/archive?account=test@example.com&from=2003-01-02');assert (await response.json())['total']==0
             response=await client.get('/api/archive?account=other@example.com');assert response.status==404
             target=root/item;target.symlink_to(base,target_is_directory=True)
             response=await client.get('/api/archive/file/test@example.com/'+item+'/unknown.jpg');assert response.status==404

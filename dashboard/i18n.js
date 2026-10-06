@@ -36,6 +36,9 @@ const I18n = (() => {
       waiting_login: ['Afslutter login-browser', 'Venter på, at login-browseren frigiver kontoen.'],
       finishing: ['Gemmer backupresultat', 'Gemmer historik og sender eventuelle notifikationer.'],
       checking: ['Kontrollerer backup', 'Kontrollerer at katalogets lokale filer findes og ikke er tomme.'],
+      checking_content: ['Kontrollerer filindhold', 'Beregner checksums og kontrollerer de valgte mediefiler lokalt.'],
+      reviewing_albums: ['Opdaterer albumhistorik', 'Gamle albumreferencer gemmes i historik. Hovedfiler bevares.'],
+      paused: ['Backup sat på pause', 'Den gemte position bevares. Vælg Genoptag backup for at fortsætte.'],
       indexing: ['Indekserer billeder og albums', 'Læser billeddatoer og albumtilknytninger fra Google Fotos.'],
       organizing: ['Organiserer filer', 'Placering og albumreferencer opdateres på serveren.'],
       downloading: ['Henter billeder og videoer', 'Mediefiler hentes fra Google Fotos og organiseres løbende.'],
@@ -44,6 +47,8 @@ const I18n = (() => {
     const stage = stages[account.phase];
     if (!stage) return null;
     let detail = t(stage[1]);
+    if(account.phase==='paused' && account.pause_reason!=='user')detail=t('Backup er sat på pause på grund af diskplads. Frigør plads eller ret reserven, før du genoptager.');
+    if(account.phase==='checking_content' && account.content?.running)detail=account.content.checked+' / '+account.content.total+t(' filers indhold kontrolleret');
     if (account.phase === 'indexing' && Number.isInteger(account.indexed_items)) {
       const format = n => new Intl.NumberFormat(language === 'da' ? 'da-DK' : 'en-GB').format(n);
       detail = format(account.indexed_items) + t(' indekserede billeder · ') + format(account.indexed_albums || 0) + t(' albums');
@@ -52,4 +57,3 @@ const I18n = (() => {
   }
   return {t, phase, locale: () => language === 'da' ? 'da-DK' : 'en-GB', set};
 })();
-

@@ -24,16 +24,16 @@ async def main():
                         await chrome.send_json({'id':number,'method':method,'params':params or {}})
                         while True:
                             data=json.loads((await chrome.receive(timeout=15)).data)
-                            if data.get('method') in ('Runtime.exceptionThrown','Log.entryAdded'): events.append(data)
+                            if data.get('method') in ('Runtime.exceptionThrown','Log.entryAdded','Page.javascriptDialogOpening'): events.append(data)
                             if data.get('id')==number:
                                 assert 'error' not in data,data
                                 return data.get('result',{})
                     async def evaluate(expression):
-                        result=await command('Runtime.evaluate',{'expression':expression,'returnByValue':True})
+                        result=await command('Runtime.evaluate',{'expression':expression,'returnByValue':True,'awaitPromise':True})
                         assert 'exceptionDetails' not in result,result
                         return result.get('result',{}).get('value')
                     async def until(expression):
-                        deadline=time.monotonic()+20
+                        deadline=time.monotonic()+45
                         while not await evaluate(expression):
                             if time.monotonic()>=deadline:
                                 print('UI diagnostics:',await evaluate("JSON.stringify({url:location.href,title:document.title,body:document.body.innerText.slice(0,3000),scripts:[...document.scripts].map(s=>s.src)})"),events[-10:])
@@ -47,9 +47,19 @@ async def main():
                     await until("document.getElementById('account-list')?.children.length>0")
                     await evaluate("document.querySelector('.account-card .account-actions button:nth-child(5)').click()")
                     await until("document.getElementById('account-tools')?.open")
-                    await evaluate("document.getElementById('schedule-enabled').checked=false;document.getElementById('schedule-hour').value=7;document.getElementById('tools-settings-form').requestSubmit()")
+                    await evaluate("document.getElementById('schedule-enabled').checked=false;document.getElementById('schedule-hour').value=7;document.getElementById('reserve-gb').value=3;document.getElementById('reserve-percent').value=1;document.getElementById('tools-settings-form').requestSubmit()")
                     await until("document.getElementById('tools-message').textContent.includes('Settings saved')")
                     assert json.loads(Path('/control/settings.json').read_text())['hour']==7
+                    assert json.loads(Path('/control/settings.json').read_text())['min_free_gb']==3
+                    # Real account actions render pause/resume at the account being operated on.
+                    await evaluate("document.getElementById('tools-close').click()")
+                    Path('/control/running').write_text('frontend pause fixture');Path('/control/run-mode').write_text('backup')
+                    await evaluate('refresh()')
+                    await until("[...document.querySelectorAll('.account-card button')].some(b=>b.textContent==='Pause backup')")
+                    await evaluate("[...document.querySelectorAll('.account-card button')].find(b=>b.textContent==='Pause backup').click()")
+                    await until("[...document.querySelectorAll('.account-card button')].some(b=>b.textContent==='Resume backup')")
+                    assert Path('/control/paused').read_text()=='user'
+                    for marker in ('running','paused','stop-request'):Path('/control',marker).unlink(missing_ok=True)
                     # Verify the busy-login message is actually rendered by login.js.
                     Path('/control/running').write_text('frontend test')
                     await command('Page.navigate',{'url':'http://127.0.0.1:8787/login/?account=legacy'})
@@ -68,6 +78,13 @@ async def main():
                     from PIL import Image
                     Image.new('RGB',(100,80),'blue').save(folder/'sample.jpg')
                     subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i','color=c=red:s=160x120:d=1','-c:v','libx264',str(folder/'sample.mp4')],check=True)
+                    await command('Page.navigate',{'url':'http://127.0.0.1:8787/'})
+                    await until("[...document.querySelectorAll('.account-card strong')].some(n=>n.textContent==='frontend@example.com')")
+                    await evaluate("[...document.querySelectorAll('.account-card')].find(c=>c.querySelector('strong').textContent==='frontend@example.com').querySelector('.account-actions button:nth-child(5)').click()")
+                    await until("document.getElementById('account-tools').open&&document.getElementById('tools-content').disabled===false")
+                    await evaluate("document.getElementById('tools-content').click()")
+                    await until("document.getElementById('content-summary').textContent.includes('2 / 2')")
+                    report=json.loads((state/'content.json').read_text());assert report['deep'] and not report['running'] and report['decode_errors']==0
                     await command('Page.navigate',{'url':'http://127.0.0.1:8787/archive/'+account})
                     await until("document.querySelectorAll('.archive-card').length===2")
                     await evaluate("document.getElementById('archive-kind').value='video';document.getElementById('archive-kind').dispatchEvent(new Event('change'))")
@@ -77,9 +94,22 @@ async def main():
                     await evaluate("document.querySelector('.archive-tile').click()")
                     await until("document.querySelector('#archive-preview video')?.readyState>=1")
                     assert await evaluate("document.getElementById('archive-preview').open")
-            print('Real browser: settings saved, busy login explained, gallery filters and video playback/thumbnail passed')
+                    await evaluate("document.getElementById('archive-close').click()")
+                    await command('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+                    assert await evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),'Mobile gallery overflows horizontally'
+                    await command('Page.enable')
+                    await evaluate("document.getElementById('archive-year').value=String(new Date().getFullYear());document.getElementById('archive-range-download').click()")
+                    if not any(e.get('method')=='Page.javascriptDialogOpening' for e in events):
+                        while True:
+                            event=json.loads((await chrome.receive(timeout=20)).data)
+                            if event.get('method')=='Page.javascriptDialogOpening':break
+                    # Dismiss the native confirmation; API ZIP contents are verified separately.
+                    await command('Page.handleJavaScriptDialog',{'accept':False})
+            print('Real browser: reserves saved, pause rendered, local decoding, gallery filters, mobile layout and date-export confirmation passed')
         finally:
             Path('/control/running').unlink(missing_ok=True)
+            Path('/control/paused').unlink(missing_ok=True)
+            Path('/control/stop-request').unlink(missing_ok=True)
             process.terminate()
             try:process.wait(timeout=10)
             except subprocess.TimeoutExpired:process.kill();process.wait()

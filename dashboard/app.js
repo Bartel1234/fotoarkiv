@@ -26,7 +26,7 @@ async function refresh() {
     el('next-run').textContent = view.next_run;
     el('activity-badge').textContent = view.running ? I18n.t('● KØRER') : view.online ? '● LIVE' : '● OFFLINE';
     el('activity-badge').className = 'badge ' + tone;
-    el('start').disabled = view.running || view.pending || view.stopping || !view.online;
+    el('start').disabled = view.running || view.pending || view.stopping || view.paused || !view.online;
     el('start').textContent = phase ? phase.title + '…' : view.running ? I18n.t('Synkroniserer…') : view.pending ? I18n.t('Starter snart…') : I18n.t('↻   Start backup nu');
     el('log').textContent = view.log;
     const list = el('recent');
@@ -115,7 +115,7 @@ function renderAccounts(accounts, summary) {
     detail.append(title, info);
     const controls = document.createElement('div'); controls.className = 'account-actions';
     const startButton = actionButton(phase ? phase.title + '…' : account.running ? I18n.t('Synkroniserer…') : account.pending ? I18n.t('Starter snart…') : I18n.t('Start backup'), account.email, 'start');
-    startButton.disabled = account.running || account.pending || account.stopping || !account.online;
+    startButton.disabled = account.running || account.pending || account.stopping || account.paused || !account.online;
     controls.append(actionButton(I18n.t('Google-login ↗'), account.email, 'login'), startButton, actionButton(I18n.t('Gennemgå hele arkivet'), account.email, 'rescan'));
     const browse = document.createElement('button');
     browse.type = 'button'; browse.className = 'outline'; browse.textContent = I18n.t('Se billeder og videoer');
@@ -126,6 +126,10 @@ function renderAccounts(accounts, summary) {
     controls.append(browse);
     const tools=document.createElement('button');tools.type='button';tools.className='outline';tools.textContent=I18n.t('Indstillinger og historik');
     tools.addEventListener('click',event=>{event.stopPropagation();openAccountTools(account);});controls.append(tools);
+    if(account.paused || (account.running && ['backup','repair'].includes(account.run_mode))){
+      const pause=actionButton(I18n.t(account.paused?'Genoptag backup':'Sæt backup på pause'),account.email,account.paused?'resume':'pause');
+      pause.disabled=!!account.stopping||!account.online||(account.paused&&(account.running||account.pending));controls.append(pause);
+    }
     if(account.email !== 'legacy') {
       const remove=document.createElement('button');remove.type='button';remove.className='outline danger';remove.textContent=I18n.t('Fjern konto');
       remove.addEventListener('click',event=>{event.stopPropagation();openRemoval(account);});controls.append(remove);
@@ -143,6 +147,7 @@ function renderAccounts(accounts, summary) {
     feedback.setAttribute('aria-live', 'polite');
     feedback.textContent = phase ? phase.detail : account.stopping ? I18n.t('◷ Afbryder backup – venter på at processerne lukker.') : account.running ? I18n.t('● Backup kører nu – nye filer vises i overblikket.') : account.pending ? account.login_active ? I18n.t('◷ Afslutter login-browseren før backup…') : I18n.t('◷ Start er bestilt – venter på synkroniseringsmotoren.') : account.login_active ? I18n.t('Login-browseren er åben. Start backup lukker den automatisk.') : '';
     const verification=document.createElement('small');verification.className='account-verification';verification.textContent=verificationText(account.verification);
+    if(account.storage?.warning)verification.textContent+=' · '+I18n.t('Lav diskplads: ')+human(account.storage.free)+I18n.t(' ledig');
     card.append(detail, controls, feedback, verification);
     list.append(card);
   }
@@ -202,4 +207,3 @@ el('remove-submit').addEventListener('click',async()=>{
   } catch(error) {el('remove-message').textContent=error.message;}
   finally {removalBusy=false;el('remove-account-dialog').querySelectorAll('button,input').forEach(node=>{node.disabled=false;});renderRemoval();}
 });
-

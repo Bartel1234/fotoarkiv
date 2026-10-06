@@ -42,6 +42,9 @@ jobs:
           docker exec fotoarkiv-ci python /checks/test_organization.py
           docker exec fotoarkiv-ci python /checks/test_progress.py
           docker exec fotoarkiv-ci python /checks/test_account_tools.py
+          docker exec fotoarkiv-ci python /checks/test_library_tools.py
+          docker exec fotoarkiv-ci python /checks/test_config_backup.py
+          docker exec fotoarkiv-ci python /checks/test_pause_storage.py
           docker exec fotoarkiv-ci python /checks/test_login_wait.py
           docker exec fotoarkiv-ci python /checks/test_tools_api.py
           node test_language.cjs
@@ -71,4 +74,3 @@ jobs:
         run: |
           docker logs fotoarkiv-ci || true
           docker rm -f fotoarkiv-ci || true
-
