@@ -1,10 +1,10 @@
 # PhotoHarbor
 
-<img src="https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.6/dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
+<img src="https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.7/dashboard/photoharbor.svg" width="96" height="96" alt="PhotoHarbor icon">
 
 **Local backup for Google Photos.** Previously called Fotoarkiv.
 
-For the current single-container edition, use [v0.2.0-beta.6](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.2.0-beta.6) and its installation guide. Google sign-in opens directly in the portal without a VNC desktop. Page footers show the running container version so you can confirm a stack update. Existing single-container stacks can update through `ghcr.io/bartel1234/fotoarkiv:beta`. Image names and data paths remain compatible. The new account tools add per-account schedules and pause, run history, local missing/empty-file checks and repair, optional ntfy notifications, clearer blocked sign-in, gallery date/media filters and video thumbnails, and release notices. Checks verify file existence and nonzero size rather than content integrity or complete Google coverage.
+For the current single-container edition, use [v0.2.0-beta.7](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.2.0-beta.7) and its installation guide. Google sign-in opens directly in the portal without a VNC desktop. Page footers show the running container version so you can confirm a stack update. Existing single-container stacks can update through `ghcr.io/bartel1234/fotoarkiv:beta`. Image names and data paths remain compatible. The new account tools add per-account schedules and pause, run history, local missing/empty-file checks and repair, optional ntfy notifications, clearer blocked sign-in, gallery date/media filters and video thumbnails, and release notices. Beta.7 also adds controlled pause/resume, free-space reserves, coverage by year and album, optional SHA-256 and image/video content checks, duplicate reports, reviewed album history, settings export/restore, mobile navigation and date-range ZIP exports. Content checks compare local baselines; they do not prove complete Google coverage or equality with Google originals.
 
 The instructions below describe the preserved three-container edition.
 
