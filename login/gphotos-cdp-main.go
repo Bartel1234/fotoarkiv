@@ -537,6 +537,15 @@ func startDownload(ctx context.Context) error {
 // completion saves its location as the most recent item downloaded. It returns
 // with an error if the download stops making any progress for more than a minute.
 func (s *Session) download(ctx context.Context, location string) (string, error) {
+	entries, err := os.ReadDir(s.dlDir)
+	if err != nil { return "", err }
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".crdownload") && entry.Type().IsRegular() {
+			dir := filepath.Join(s.dlDir, ".fotoarkiv", "partial", fmt.Sprint(time.Now().UnixNano()))
+			if err := os.MkdirAll(dir,0700); err != nil { return "",err }
+			if err := os.Rename(filepath.Join(s.dlDir,entry.Name()),filepath.Join(dir,entry.Name())); err != nil { return "",err }
+		}
+	}
 
 	if err := startDownload(ctx); err != nil {
 		return "", err
@@ -545,6 +554,7 @@ func (s *Session) download(ctx context.Context, location string) (string, error)
 	var filename string
 	started := false
 	var fileSize int64
+	var lastTelemetry time.Time
 	// Large videos can pause for several minutes before Chrome writes more bytes.
 	// Keep the timeout tied to actual file growth, not total download duration.
 	stallTimeout := 10 * time.Minute
@@ -588,6 +598,7 @@ func (s *Session) download(ctx context.Context, location string) (string, error)
 			}
 		}
 		newFileSize := fileEntries[0].Size()
+		if newFileSize > fileSize && time.Since(lastTelemetry) >= time.Second { writeLive(map[string]interface{}{"at":time.Now().Unix(), "current_bytes":newFileSize}); lastTelemetry=time.Now() }
 		if newFileSize > fileSize {
 			// push back the timeout as long as we make progress
 			deadline = time.Now().Add(stallTimeout)
@@ -598,10 +609,6 @@ func (s *Session) download(ctx context.Context, location string) (string, error)
 			filename = fileEntries[0].Name()
 			break
 		}
-	}
-
-	if err := markDone(s.dlDir, location); err != nil {
-		return "", err
 	}
 
 	return filename, nil
@@ -627,6 +634,7 @@ func (s *Session) moveDownload(ctx context.Context, dlFile, location string) (st
 }
 
 func (s *Session) dlAndMove(ctx context.Context, location string) (string, error) {
+	actualDownload = false
 	item := location[strings.LastIndex(location, "/")+1:]
 	paths := s.downloaded[item]
 	if len(paths) > 0 {
@@ -644,9 +652,6 @@ func (s *Session) dlAndMove(ctx context.Context, location string) (string, error
 			}
 		}
 		if allExist {
-			if err := markDone(s.dlDir, location); err != nil {
-				return "", err
-			}
 			return filepath.Join(s.dlDir, paths[0]), nil
 		}
 	}
@@ -654,7 +659,9 @@ func (s *Session) dlAndMove(ctx context.Context, location string) (string, error
 	if err != nil {
 		return "", err
 	}
-	return s.moveDownload(ctx, dlFile, location)
+	path, err := s.moveDownload(ctx, dlFile, location)
+	if err == nil { actualDownload = true }
+	return path, err
 }
 
 var (
@@ -710,13 +717,21 @@ func (s *Session) navN(N int) func(context.Context) error {
 				break
 			}
 			prevLocation = location
+			writeLive(map[string]interface{}{"at":time.Now().Unix(), "current_bytes":int64(0)})
 			filePath, err := s.dlAndMove(ctx, location)
 			if err != nil {
+				recordFailure(location, err, "download")
 				return err
 			}
+			var size int64
+			if st, e := os.Stat(filePath); e == nil { size = st.Size() }
 			if err := doRun(filePath); err != nil {
+				recordFailure(location, err, "organization")
 				return err
 			}
+			if actualDownload { recordDownload(location, filepath.Base(filePath), size) }
+			if err := markDone(s.dlDir, location); err != nil { return err }
+			writeLive(map[string]interface{}{"at":time.Now().Unix(), "visited":float64(n+1), "current_bytes":int64(0)})
 			n++
 			if N > 0 && n >= N {
 				break
@@ -726,6 +741,7 @@ func (s *Session) navN(N int) func(context.Context) error {
 			}
 
 			if err := navLeft(ctx); err != nil {
+				recordFailure(location, err, "navigation")
 				return fmt.Errorf("error at %v: %v", location, err)
 			}
 		}
@@ -790,3 +806,37 @@ func (s *Session) indexAlbums(ctx context.Context) error {
 	return errors.New("album indexing timed out; previous metadata preserved")
 }
 
+
+// State is local to this account's process. Only completed actual downloads enter
+// the run journal; skipped catalog items and album links never enter it.
+var actualDownload bool
+func stateJSON(name string, data interface{}) {
+ dir := os.Getenv("PHOTOHARBOR_RUN_STATE"); if dir == "" { return }
+ bytes, err := json.Marshal(data); if err != nil { return }
+ path := filepath.Join(dir,name)
+ if err := os.WriteFile(path+".tmp",bytes,0600); err == nil { os.Rename(path+".tmp",path) }
+}
+func writeLive(update map[string]interface{}) {
+ dir:=os.Getenv("PHOTOHARBOR_RUN_STATE"); if dir=="" {return}
+ data:=map[string]interface{}{}
+ bytes,_:=os.ReadFile(filepath.Join(dir,"live.json"));json.Unmarshal(bytes,&data)
+ for k,v:=range update {data[k]=v};data["attempt"]=os.Getenv("PHOTOHARBOR_ATTEMPT")
+ stateJSON("live.json",data)
+}
+func recordFailure(location string, err error, category string) {
+ message:=strings.ToLower(err.Error())
+ retry:=category!="organization" && (strings.Contains(message,"timeout") || strings.Contains(message,"stalled") || strings.Contains(message,"too long to start") || strings.Contains(message,"connection reset") || strings.Contains(message,"connection closed"))
+ id:=location[strings.LastIndex(location,"/")+1:]
+ stateJSON("download-failure.json",map[string]interface{}{"at":time.Now().Unix(),"id":id,"category":category,"retryable":retry})
+}
+func recordDownload(location,name string,size int64) {
+ dir:=os.Getenv("PHOTOHARBOR_RUN_STATE");if dir=="" || size<=0{return}
+ id:=location[strings.LastIndex(location,"/")+1:]
+ kind:="image"; switch strings.ToLower(filepath.Ext(name)) {case ".mp4",".mov",".m4v",".webm",".avi",".mkv",".3gp":kind="video"}
+ event:=map[string]interface{}{"id":id,"name":name,"kind":kind,"bytes":size,"at":time.Now().Unix()}
+ file,err:=os.OpenFile(filepath.Join(dir,"downloads.jsonl"),os.O_CREATE|os.O_WRONLY|os.O_APPEND,0600)
+ if err==nil {json.NewEncoder(file).Encode(event);file.Sync();file.Close()}
+ data:=map[string]interface{}{};bytes,_:=os.ReadFile(filepath.Join(dir,"live.json"));json.Unmarshal(bytes,&data)
+ files,_:=data["completed_files"].(float64);total,_:=data["completed_bytes"].(float64)
+ writeLive(map[string]interface{}{"at":time.Now().Unix(),"completed_files":files+1,"completed_bytes":total+float64(size)})
+}

@@ -96,9 +96,10 @@ def ready(target):
             return db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()==(str(SCHEMA),)
     except sqlite3.DatabaseError:return False
 
-def query(target,album,search,page,year=0,month=0,kind="",sort="newest",start='',end=''):
+def query(target,album,search,page,year=0,month=0,kind="",sort="newest",start='',end='', favorites_db=None, favorites=False, anniversary=''):
     with sqlite3.connect(target.as_uri()+'?mode=ro',uri=True) as db:
         db.create_function('casefold',1,lambda value:value.casefold(),deterministic=True)
+        if favorites_db: db.execute('ATTACH DATABASE ? AS saved',(str(favorites_db),))
         params=[]
         if album and album!='__none__':
             source='members AS m JOIN files AS f ON f.id=m.id AND f.name=m.name'
@@ -108,8 +109,12 @@ def query(target,album,search,page,year=0,month=0,kind="",sort="newest",start=''
             source='files AS f';where='1';order='f.stamp DESC,f.id DESC,f.name DESC'
             if album=='__none__':where+=' AND NOT EXISTS (SELECT 1 FROM members AS m WHERE m.id=f.id AND m.name=f.name)'
         if search:
-            where += ' AND (instr(f.search_name,?)>0 OR EXISTS (SELECT 1 FROM members sm JOIN albums sa ON sa.id=sm.album WHERE sm.id=f.id AND sm.name=f.name AND instr(casefold(sa.title),?)>0))'
-            params.extend([search.casefold(), search.casefold()])
+            where += ' AND (instr(f.search_name,?)>0 OR EXISTS (SELECT 1 FROM members sm JOIN albums sa ON sa.id=sm.album WHERE sm.id=f.id AND sm.name=f.name AND instr(casefold(sa.title),?)>0) OR instr(f.day,?)>0)'
+            params.extend([search.casefold(), search.casefold(), search])
+        if favorites:
+            where+=(' AND EXISTS (SELECT 1 FROM saved.favorites sf WHERE sf.id=f.id AND sf.name=f.name)' if favorites_db else ' AND 0')
+        if anniversary:
+            where+=' AND substr(f.day,6)=? AND f.year<?';params.extend([anniversary,datetime.now().year])
         if year: where+=' AND f.year=?';params.append(year)
         if month: where+=' AND f.month=?';params.append(month)
         if kind: where+=' AND f.kind=?';params.append(kind)

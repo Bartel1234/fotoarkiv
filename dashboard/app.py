@@ -18,6 +18,7 @@ from progress import progress
 from login_view import setup as setup_login
 from backup_state import settings, validate, atomic, load, next_run
 from library_tools import storage, album_review
+from operations import live, smtp_validate, smtp_public, smtp_save, send_mail, diagnostics
 
 CONTROL = Path('/control')
 PHOTOS = Path(os.environ.get('PHOTOS_DIR', '/photos'))
@@ -183,7 +184,7 @@ def load_text(path):
 
 
 def account_details(state):
-    return {'settings': settings(state), 'history': load(state/'history.json', []),
+    return {'live':live(state), 'failure':load(state/'download-failure.json',None),'email_notification':load(state/'email-status.json',None),'settings': settings(state), 'history': load(state/'history.json', []),
             'paused': (state/'paused').exists(), 'pause_reason': load_text(state/'paused'),
             'run_mode': load_text(state/'run-mode') or 'backup',
             'storage': load(state/'storage.json', None), 'coverage': load(state/'coverage.json', None),
@@ -540,6 +541,35 @@ async def configuration_action(request):
         _account_cache['at'] = 0
     return web.json_response({'ok': True, 'accounts': len(entries)})
 
+async def email_settings(request):
+    path=CONTROL/'smtp.json'
+    if request.method=='GET': return web.json_response(smtp_public(load(path,{})),headers={'Cache-Control':'no-store'})
+    if request.content_type!='application/json' or (request.content_length or 0)>10000: raise web.HTTPBadRequest()
+    try: data=await request.json()
+    except ValueError: raise web.HTTPBadRequest()
+    if not isinstance(data,dict) or not hmac.compare_digest(str(data.get('token','')),TOKEN): raise web.HTTPForbidden()
+    async with request.app['account_lock']:
+        if request.match_info['action']=='save':
+            try: config=smtp_validate(data.get('settings'),load(path,{}))
+            except (ValueError,TypeError): raise web.HTTPBadRequest(text='Invalid email settings; use encrypted SMTP and complete addresses')
+            await asyncio.to_thread(smtp_save,path,config)
+            return web.json_response(smtp_public(config),headers={'Cache-Control':'no-store'})
+        config=load(path,{})
+        try: await asyncio.to_thread(send_mail,config,'PhotoHarbor test email','PhotoHarbor email delivery is working. This message contains no media or Google sign-in information.')
+        except Exception: raise web.HTTPBadGateway(text='Test email failed. Check SMTP host, encryption, sender and credentials.')
+    return web.json_response({'ok':True})
+
+async def diagnostic_download(request):
+    try: data=await request.json()
+    except ValueError: raise web.HTTPBadRequest()
+    if not isinstance(data,dict) or not hmac.compare_digest(str(data.get('token','')),TOKEN): raise web.HTTPForbidden()
+    email=request.match_info['email']
+    if email!='legacy' and email not in account_names(): raise web.HTTPNotFound()
+    state=CONTROL if email=='legacy' else CONTROL/'accounts'/email
+    report=await asyncio.to_thread(diagnostics,state,APP_VERSION)
+    return web.json_response(report,headers={'Content-Disposition':'attachment; filename="photoharbor-diagnostics.json"','Cache-Control':'no-store'})
+
+
 async def release_watch(app):
     # Public release metadata only. No user/account data is sent to GitHub.
     while True:
@@ -552,9 +582,17 @@ async def release_watch(app):
             latest = max(candidates, key=lambda r: version_key(r['tag_name']))
             url = latest.get('html_url','')
             if not url.startswith('https://github.com/Bartel1234/fotoarkiv/releases/tag/'): raise ValueError('Invalid release URL')
+            channels={}
+            for channel,prerelease in [('stable',False),('beta',True)]:
+                choices=[r for r in candidates if bool(r.get('prerelease'))==prerelease]
+                if choices:
+                    candidate=max(choices,key=lambda r:version_key(r['tag_name']))
+                    link=candidate.get('html_url','')
+                    if link.startswith('https://github.com/Bartel1234/fotoarkiv/releases/tag/'):
+                        channels[channel]={'version':candidate['tag_name'],'url':link,'notes':str(candidate.get('body') or '')[:12000]}
             installed = version_key(APP_VERSION)
             app['release_status'] = {'state':'available' if installed and version_key(latest['tag_name']) > installed else 'current',
-                'installed':APP_VERSION, 'latest':latest['tag_name'], 'url':url}
+                'installed':APP_VERSION, 'latest':latest['tag_name'], 'url':url,'channels':channels}
         except (ClientError, ValueError, TypeError, asyncio.TimeoutError):
             app['release_status'] = {**app.get('release_status', {}), 'state':'unavailable', 'installed':APP_VERSION}
         await asyncio.sleep(21600)
@@ -578,10 +616,13 @@ if __name__ == '__main__':
     app.router.add_get('/', home)
     app.router.add_get('/archive/{email}', archive_page)
     app.router.add_get('/api/status', api_status)
-    app.router.add_get('/{name:style.css|app.js|enhancements.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
+    app.router.add_get('/{name:style.css|app.js|enhancements.js|upgrades.js|archive.js|i18n.js|flag-en.svg|flag-da.svg|photoharbor.svg|photoharbor-wordmark.svg|photoharbor-192.png|photoharbor-512.png|favicon.ico}', asset)
     app.router.add_post('/start', start)
     app.router.add_post('/api/accounts', account_action)
     app.router.add_post('/api/config/{action:export|preview|restore}', configuration_action)
+    app.router.add_get('/api/email', email_settings)
+    app.router.add_post('/api/email/{action:save|test}', email_settings)
+    app.router.add_post('/api/diagnostics/{email}', diagnostic_download)
     app.router.add_post('/api/accounts/{email}/{action:login|close-login|start|rescan|organize|stop|remove|settings|verify|repair|pause|resume|content|duplicates|approve-albums}', account_action)
     setup_archive(app, PHOTOS, CONTROL / 'thumbnails', account_names,
                   lambda supplied: isinstance(supplied, str) and hmac.compare_digest(supplied, TOKEN))

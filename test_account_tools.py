@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT=Path(__file__).parent
+__import__("sys").path.insert(0,str(ROOT/"dashboard"))
 spec=importlib.util.spec_from_file_location('backup_state',ROOT/'dashboard/backup_state.py')
 b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
 spec=importlib.util.spec_from_file_location('archive_index',ROOT/'dashboard/archive_index.py')

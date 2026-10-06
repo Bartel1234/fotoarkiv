@@ -10,6 +10,7 @@ function verificationText(report){
   return text;
 }
 function updateAccountTools(data){
+  showVersions(data);
   const update=data.update||{};
   const box=toolEl('release-notice');
   box.replaceChildren();
@@ -28,6 +29,8 @@ function updateAccountTools(data){
   renderLibraryTools(account,busy);
   toolEl('tools-success').textContent=I18n.t('Seneste vellykkede backup: ')+(account.last_success?.finished||I18n.t('Ingen endnu'));
   toolEl('tools-next').textContent=I18n.t('Næste kørsel: ')+(account.settings?.enabled?account.next_run:I18n.t('Automatisk backup er sat på pause'));
+  toolEl('tools-email-status').textContent=account.email_notification?(account.email_notification.ok?I18n.t('Seneste mail sendt'):I18n.t('Seneste mail fejlede'))+' · '+account.email_notification.at:'';
+  toolEl('tools-failure').textContent=account.failure?I18n.t('Seneste downloadfejl: ')+account.failure.category+' · '+(account.failure.id||'')+(account.failure.retryable?' · '+I18n.t('Midlertidig fejl'):''):'';
   toolEl('tools-notification-status').textContent=account.notification?(account.notification.ok?I18n.t('Seneste notifikation sendt'):I18n.t('Seneste notifikation fejlede'))+' · '+account.notification.at:'';
   const rows=toolEl('tools-history');rows.replaceChildren();
   for(const entry of account.history||[]){
@@ -46,6 +49,7 @@ function openAccountTools(account){
   const config=account.settings||{enabled:true,hour:3,days:[0,1,2,3,4,5,6],notify_url:'',notify_success:false};
   toolEl('schedule-enabled').checked=config.enabled;toolEl('schedule-hour').value=config.hour;
   document.querySelectorAll('[data-weekday]').forEach(node=>{node.checked=config.days.includes(Number(node.dataset.weekday));});
+  toolEl('email-enabled').checked=!!config.email_enabled;toolEl('email-mode').value=config.email_mode||'all';toolEl('retry-count').value=config.retry_count??2;toolEl('index-hours').value=config.index_hours??24;
   toolEl('notify-url').value=config.notify_url;toolEl('notify-success').checked=config.notify_success;
   toolEl('reserve-gb').value=config.min_free_gb??2;toolEl('reserve-percent').value=config.min_free_percent??2;
   toolEl('album-confirm').value='';toolsCurrentAccount=account;
@@ -55,7 +59,7 @@ toolEl('tools-close').addEventListener('click',()=>toolEl('account-tools').close
 toolEl('tools-settings-form').addEventListener('submit',async event=>{
   event.preventDefault();const button=toolEl('tools-save');button.disabled=true;
   try{
-    const settings={enabled:toolEl('schedule-enabled').checked,hour:Number(toolEl('schedule-hour').value),days:[...document.querySelectorAll('[data-weekday]:checked')].map(n=>Number(n.dataset.weekday)),notify_url:toolEl('notify-url').value.trim(),notify_success:toolEl('notify-success').checked,min_free_gb:Number(toolEl('reserve-gb').value),min_free_percent:Number(toolEl('reserve-percent').value)};
+    const settings={email_enabled:toolEl('email-enabled').checked,email_mode:toolEl('email-mode').value,retry_count:Number(toolEl('retry-count').value),index_hours:Number(toolEl('index-hours').value),enabled:toolEl('schedule-enabled').checked,hour:Number(toolEl('schedule-hour').value),days:[...document.querySelectorAll('[data-weekday]:checked')].map(n=>Number(n.dataset.weekday)),notify_url:toolEl('notify-url').value.trim(),notify_success:toolEl('notify-success').checked,min_free_gb:Number(toolEl('reserve-gb').value),min_free_percent:Number(toolEl('reserve-percent').value)};
     await postAccount('/api/accounts/'+encodeURIComponent(toolsAccount)+'/settings',{settings});
     toolEl('tools-message').textContent=I18n.t('Indstillinger gemt. Tidsplanen opdateres inden for 10 sekunder.');await refresh();
   }catch(error){toolEl('tools-message').textContent=error.message;}

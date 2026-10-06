@@ -2,6 +2,7 @@
 set -u
 account=$1
 BACKUP_STATE=${BACKUP_STATE:-/app/backup_state.py}
+OPERATIONS=${OPERATIONS:-$(dirname "$BACKUP_STATE")/operations.py}
 LIBRARY_TOOLS=${LIBRARY_TOOLS:-$(dirname "$BACKUP_STATE")/library_tools.py}
 if [ "$account" = legacy ]; then
   state=/control
@@ -41,6 +42,9 @@ run_sync() {
   if [ "$space_result" = 3 ]; then return 132; fi
   if [ "$space_result" != 0 ]; then return 1; fi
   python3 "$LIBRARY_TOOLS" snapshot "$state" "$destination" || return 1
+  force_index=
+  if [ "$organize_only" != 0 ] || [ -f "$state/full-index" ]; then force_index=--force; fi
+  if python3 "$OPERATIONS" index-due "$state" "$destination" $force_index; then
   set_phase indexing
   echo "Henter albums og Google-datoer"
   if TMPDIR="$profile_tmp" gphotos-cdp -dev -headless -index-albums -dldir "$destination"; then
@@ -56,14 +60,32 @@ run_sync() {
     echo "FEJL: Kunne ikke opdatere albumindeks. Tidligere indeks og filer bevares."
     if [ "$organize_only" = 1 ]; then return 1; fi
   fi
+  else
+    echo "Using cached Google metadata; full refresh follows account policy"
+  fi
+  rm -f "$state/full-index"
   if [ "$organize_only" = 1 ]; then
     set_phase checking
     python3 "$BACKUP_STATE" check "$state" "$destination"
     return $?
   fi
   set_phase downloading
-  TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -run /usr/local/bin/fotoarkiv-organize-one -dldir "$destination"
-  download_result=$?
+  max_retries=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0,str(Path(sys.argv[1]).parent)); from backup_state import settings; print(settings(Path(sys.argv[2]))["retry_count"])' "$BACKUP_STATE" "$state")
+  retries=0
+  while :; do
+    rm -f "$state/download-failure.json"
+    PHOTOHARBOR_RUN_STATE="$state" PHOTOHARBOR_ATTEMPT="$retries" TMPDIR="$profile_tmp" gphotos-cdp -v -dev -headless -run /usr/local/bin/fotoarkiv-organize-one -dldir "$destination"
+    download_result=$?
+    [ "$download_result" = 0 ] && break
+    [ "$retries" -ge "$max_retries" ] && break
+    python3 "$OPERATIONS" retryable "$state" || break
+    retries=$((retries+1))
+    echo "$retries" > "$state/retry-count"
+    set_phase retrying
+    echo "Transient download failure; retry $retries/$max_retries after $((30*retries)) seconds"
+    sleep $((30*retries))
+    set_phase downloading
+  done
   if [ -f "$destination/.fotoarkiv/metadata.json" ]; then
     set_phase organizing
     python3 /usr/local/bin/fotoarkiv-organize.py "$destination" || return 1
@@ -160,6 +182,7 @@ while :; do
     # A full rescan preserves the downloaded item directories and archives
     # the old cursor outside the download folder before starting from oldest.
     if [ -f "$state/rescan-request" ]; then
+      touch "$state/full-index"
       if [ -f "$destination/.lastdone" ]; then
         if cp "$destination/.lastdone" "$state/lastdone-before-rescan"; then
           rm "$destination/.lastdone"

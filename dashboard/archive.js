@@ -60,7 +60,9 @@ function archiveRender() {
       archiveSelection();
     });
     label.append(check, document.createTextNode(I18n.t(' Vælg')));
-    card.append(preview, name, meta, label); grid.append(card);
+    const favorite=document.createElement('button');favorite.type='button';favorite.className='outline favorite-toggle';favorite.textContent=item.favorite?'★ '+I18n.t('Favorit'):'☆ '+I18n.t('Tilføj favorit');favorite.setAttribute('aria-pressed',String(item.favorite));
+    favorite.addEventListener('click',async()=>{favorite.disabled=true;try{const response=await fetch('/api/archive/favorite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:archiveEl('archive-token').value,account:archiveState.account,id:item.id,name:item.name,favorite:!item.favorite})});if(!response.ok)throw Error(await response.text());item.favorite=!item.favorite;archiveRender();}catch(error){archiveEl('archive-message').textContent=error.message;favorite.disabled=false;}});
+    card.append(preview, name, meta, label, favorite); grid.append(card);
   }
   archiveEl('archive-total').textContent = archiveFormat(archiveState.total) + I18n.t(' filer');
   archiveEl('archive-page').textContent = I18n.t('Side ') + archiveState.page + I18n.t(' af ') + Math.max(1, Math.ceil(archiveState.total / 48));
@@ -80,7 +82,7 @@ async function archiveLoad() {
   archiveEl('archive-grid').textContent = I18n.t('Indlæser filer… Første åbning kan tage lidt tid, mens indekset opbygges.');
   try {
     const params = new URLSearchParams({account: archiveState.account, page: archiveState.page,
-      q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value,year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,kind:archiveEl('archive-kind').value,sort:archiveEl('archive-sort').value,from:archiveEl('archive-from').value,to:archiveEl('archive-to').value});
+      favorites:archiveEl('archive-favorites').checked?'1':'0',anniversary:archiveEl('archive-memories').checked?String(new Date().getMonth()+1).padStart(2,'0')+'-'+String(new Date().getDate()).padStart(2,'0'):'',q: archiveEl('archive-search').value.trim(), album: archiveEl('archive-album').value,year:archiveEl('archive-year').value||'0',month:archiveEl('archive-month').value,kind:archiveEl('archive-kind').value,sort:archiveEl('archive-sort').value,from:archiveEl('archive-from').value,to:archiveEl('archive-to').value});
     const response = await fetch('/api/archive?' + params, {cache: 'no-store',signal});
     if (!response.ok) throw new Error(await response.text());
     const data = await response.json();
@@ -208,7 +210,7 @@ archiveEl('archive-album-download').addEventListener('click', async () => {
 
 
 for(const id of ['archive-year','archive-month','archive-kind','archive-sort','archive-from','archive-to'])archiveEl(id).addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});
-archiveEl('archive-reset').addEventListener('click',()=>{
+archiveEl('archive-reset').addEventListener('click',()=>{archiveEl('archive-favorites').checked=false;archiveEl('archive-memories').checked=false;
   archiveEl('archive-year').value='';archiveEl('archive-month').value='0';archiveEl('archive-kind').value='';archiveEl('archive-sort').value='newest';archiveEl('archive-search').value='';archiveEl('archive-album').value='';
   archiveEl('archive-from').value='';archiveEl('archive-to').value='';
   archiveState.page=1;archiveState.selected.clear();archiveLoad();
@@ -244,3 +246,5 @@ archiveEl('archive-range-download').addEventListener('click',async()=>{
   }catch(error){archiveEl('archive-message').textContent=error.message;}
   finally{button.disabled=false;}
 });
+
+for(const id of ['archive-favorites','archive-memories'])archiveEl(id).addEventListener('change',()=>{archiveState.page=1;archiveState.selected.clear();archiveLoad();});

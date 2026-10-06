@@ -6,7 +6,7 @@
 
 PhotoHarbor was previously called Fotoarkiv. Existing Compose service names, image repositories, data folders and internal metadata names are retained for upgrade compatibility.
 
-**v0.2.0-beta.7: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
+**v0.2.0-beta.8: single-container edition (amd64).** The portal, per-account workers and sign-in browser run as supervised processes in one container. The previous three-container edition is preserved in [v0.1.0](https://github.com/Bartel1234/fotoarkiv/releases/tag/v0.1.0). This is a beta; a complete Google Photos backup on Unraid still needs real-account validation.
 
 A local web portal for automatic Google Photos backups, with separate accounts, album folders, a media browser and ZIP downloads. The interface defaults to **English**. Use the **🇬🇧 EN / 🇩🇰 DA** buttons at the top of the dashboard or media browser to switch to Danish. The preference is remembered in your browser. Album names, filenames and raw worker logs retain their original language.
 
@@ -37,7 +37,7 @@ Download [my-fotoarkiv.xml](templates/my-fotoarkiv.xml) into Unraid's user-templ
 
 ```sh
 mkdir -p /boot/config/plugins/dockerMan/templates-user
-curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.7/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta7.xml
+curl -fL https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.8/templates/my-fotoarkiv.xml -o /boot/config/plugins/dockerMan/templates-user/my-photoharbor-beta7.xml
 ```
 
 In Unraid select **Docker → Add Container → Template → PhotoHarbor** under user templates. Set a strong portal password and check all four host folders before selecting Apply. The template uses one prebuilt container and exposes only port 8787. Do not overwrite an existing customized template containing your settings. To migrate from Compose, stop its containers first and use exactly the same four host folders; never run both installations against the same profiles.
@@ -46,7 +46,7 @@ In Unraid select **Docker → Add Container → Template → PhotoHarbor** under
 
 For updates without editing the version each time, set `image: ghcr.io/bartel1234/fotoarkiv:beta` and `pull_policy: always` in the existing stack. Use Compose Manager Update, or Compose Pull followed by Compose Up. The beta alias advances only after publishing a release with a verified matching image. Finish active backups first. Keep your existing persistent paths and .env values.
 
-Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.7/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
+Under Edit Stack → UI Labels, set the fotoarkiv service icon to `https://raw.githubusercontent.com/Bartel1234/fotoarkiv/v0.2.0-beta.8/dashboard/photoharbor-512.png` and WebUI to `http://[IP]:[PORT:8787]/`. Existing user-owned Compose Manager labels are not changed by pulling an image.
 
 ### Compose without a local build
 
@@ -144,7 +144,7 @@ Stop or finish active backups first. This command keeps `.env`, `APPDATA_DIR` an
 (
 set -e
 cd /mnt/user/appdata/fotoarkiv-projekt
-release_version=v0.2.0-beta.7
+release_version=v0.2.0-beta.8
 update_dir=$(mktemp -d)
 trap 'rm -rf "$update_dir"' EXIT
 curl -fL "https://github.com/Bartel1234/fotoarkiv/archive/refs/tags/$release_version.tar.gz" -o "$update_dir/source.tar.gz"
@@ -215,3 +215,23 @@ Under **Settings and history**, set minimum free GB and percent. The larger rese
 **Export settings / Import settings** is a reviewed JSON backup of account names, schedules and reserves. It excludes passwords, Google browser profiles, notification destinations, media and host mount paths. Import previews accounts and requires acknowledgement; it updates settings and can add account folders, retaining accounts not listed in the file. Stop jobs before restoring settings. Existing notification URLs are preserved; enter URLs manually for new accounts. On a new installation, configure mounts/password normally and sign in to each restored account.
 
 The gallery adds inclusive **From date / To date** filters and **Download year or date range**. Date ZIPs contain all matching local files across pages and use Google's calendar dates when known, otherwise the local download date. Year/month, both interval dates and optional media type apply together; album/search/manual selections do not apply. The portal confirms counts and size before streaming without a temporary server ZIP. Complete date exports have no manual 500-file/10-GB limit; allow enough browser space and time. Mobile controls have larger touch targets and photo previews support horizontal swipe and previous/next across pages; video controls retain their native gestures.
+
+## Email, retries and library navigation (beta.8)
+
+Open **Email settings** in the accounts section. Configure an SMTP host, port, STARTTLS (typically 587) or TLS (typically 465), username/password, sender, one recipient and English or Danish email language. Only encrypted SMTP with certificate verification is supported. Save, then use **Send test email**. For Gmail or Workspace, use the provider's supported SMTP credentials; browser Google Photos sign-in does not authorize SMTP.
+
+Enable email separately in each account's **Settings and history**, choosing all finished jobs or errors only. Completed, failed, stopped and paused jobs can send a message. Local checks and organization are included; the message identifies the task. Email contains the account name, duration, outcome, completed download counts by media type, bytes, retry count and measured free space. Actual completed downloads (including redownloads) are counted once per item/name within the job; skipped files and album references are excluded. Downloaded counts differ from the net archive growth shown in history. Neither metric proves complete Google coverage. Interrupted in-flight files are not counted. SMTP failures are visible on the account and do not alter the job result.
+
+SMTP configuration is private server data under appdata/control/smtp.json, mode 0600, readable by the container and host administrator. Passwords are never returned by the API or included in settings exports or diagnostic reports. Blank password preserves the existing secret; explicitly choose Clear saved SMTP password to remove it. SMTP must be reconfigured after a settings-only restore. No email is sent until SMTP and the account's mail policy are enabled.
+
+Accounts default to two additional retries for recognized transient download/navigation errors, with 30/60-second waits. Login, metadata protocol, organization and file-conflict errors are not automatically retried. Stop and pause interrupt retries too. Failed download IDs appear in account settings; diagnostic reports contain only error categories. Abandoned .crdownload files are retained in .fotoarkiv/partial before another download attempt. The resume cursor advances after successful local post-processing.
+
+Complete Google metadata is reused for up to 24 hours by default (configurable 0–168 hours; 0 always refreshes). Full scan, repair and Refresh albums force a new index. New downloads without cached metadata remain visible in their original item folders until the next full index organizes them. Album/date changes can be delayed until that refresh. This optimization does not change Google's data.
+
+Account cards show completed file/byte counts, average completed-byte throughput and last observed download activity. A warning after 15 minutes without recorded activity suggests inspecting the log; it does not automatically terminate the job. This is not an estimated completion percentage or a network speed test.
+
+The gallery can store local favorites, filter Favorites only, show the same calendar date in previous years, and search filenames, album titles or ISO dates (YYYY-MM-DD). Favorites are local metadata under the account's .fotoarkiv folder and do not change Google Photos. Existing date/media/album filters can be combined with these views; Clear filters clears favorites and memories too. Date/album ZIP exports retain their explicit scopes and do not apply favorites/search/memories filters.
+
+**Download diagnostic report** in account settings exports an allowlist of version, policy, counters, run results and error categories. It excludes raw logs, account/filenames, host paths, media, passwords, SMTP and notification URLs. It remains a private file with backup timing and size information; inspect before sharing.
+
+**Versions** shows installed version and published beta/stable release notes. Viewing a channel does not install it. Update through Compose/Update Stack. Older stable releases can require a different container layout; read their installation instructions before switching. Previous versioned releases and images remain available.

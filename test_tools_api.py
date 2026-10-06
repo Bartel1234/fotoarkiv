@@ -13,7 +13,7 @@ async def main():
         dashboard.PHOTOS=root/'photos';dashboard.PHOTOS.mkdir()
         dashboard.ACCOUNT_LIST.write_text('first@example.com\nsecond@example.com\n')
         app=web.Application();app['account_lock']=asyncio.Lock();app.router.add_post('/api/accounts/{email}/{action}',dashboard.account_action)
-        config={'enabled':False,'hour':4,'days':[1,3],'notify_url':'','notify_success':False,'min_free_gb':2,'min_free_percent':2}
+        config={'enabled':False,'hour':4,'days':[1,3],'notify_url':'','notify_success':False,'min_free_gb':2,'min_free_percent':2,'email_enabled':False,'email_mode':'all','retry_count':2,'index_hours':24}
         async with TestClient(TestServer(app))as client:
             base='/api/accounts/first@example.com/'
             response=await client.post(base+'settings',json={'token':'bad','settings':config});assert response.status==403

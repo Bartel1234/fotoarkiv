@@ -41,6 +41,8 @@ jobs:
           docker exec fotoarkiv-ci python /checks/test_archive_index.py
           docker exec fotoarkiv-ci python /checks/test_organization.py
           docker exec fotoarkiv-ci python /checks/test_progress.py
+          docker exec fotoarkiv-ci python /checks/test_operations.py
+          docker exec fotoarkiv-ci python /checks/test_worker_retry.py
           docker exec fotoarkiv-ci python /checks/test_account_tools.py
           docker exec fotoarkiv-ci python /checks/test_library_tools.py
           docker exec fotoarkiv-ci python /checks/test_config_backup.py

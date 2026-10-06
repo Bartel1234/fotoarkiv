@@ -51,8 +51,17 @@ async def main():
                     await until("document.getElementById('tools-message').textContent.includes('Settings saved')")
                     assert json.loads(Path('/control/settings.json').read_text())['hour']==7
                     assert json.loads(Path('/control/settings.json').read_text())['min_free_gb']==3
+                    await evaluate("document.getElementById('tools-close').click();document.getElementById('email-open').click()")
+                    await until("document.getElementById('email-dialog').open")
+                    await evaluate("document.getElementById('smtp-enabled').checked=false;document.getElementById('smtp-host').value='smtp.example.com';document.getElementById('smtp-sender').value='backup@example.com';document.getElementById('smtp-recipient').value='recipient@example.com';document.getElementById('smtp-password').value='frontend-fixture-secret';document.getElementById('smtp-form').requestSubmit()")
+                    await until("document.getElementById('smtp-message').textContent.includes('Email settings saved')")
+                    assert json.loads(Path('/control/smtp.json').read_text())['password']=='frontend-fixture-secret'
+                    assert not await evaluate("fetch('/api/email').then(r=>r.text()).then(t=>t.includes('frontend-fixture-secret'))")
+                    await evaluate("document.getElementById('smtp-close').click();document.getElementById('versions-open').click()")
+                    await until("document.getElementById('versions-dialog').open")
+                    assert await evaluate("document.getElementById('installed-version').textContent") == Path('/app/VERSION').read_text().strip()
+                    await evaluate("document.getElementById('versions-close').click()")
                     # Real account actions render pause/resume at the account being operated on.
-                    await evaluate("document.getElementById('tools-close').click()")
                     Path('/control/running').write_text('frontend pause fixture');Path('/control/run-mode').write_text('backup')
                     await evaluate('refresh()')
                     await until("[...document.querySelectorAll('.account-card button')].some(b=>b.textContent==='Pause backup')")
@@ -87,7 +96,13 @@ async def main():
                     report=json.loads((state/'content.json').read_text());assert report['deep'] and not report['running'] and report['decode_errors']==0
                     await command('Page.navigate',{'url':'http://127.0.0.1:8787/archive/'+account})
                     await until("document.querySelectorAll('.archive-card').length===2")
-                    await evaluate("document.getElementById('archive-kind').value='video';document.getElementById('archive-kind').dispatchEvent(new Event('change'))")
+                    await evaluate("document.querySelector('.favorite-toggle').click()")
+                    await until("document.querySelector('.favorite-toggle').getAttribute('aria-pressed')==='true'")
+                    await evaluate("document.getElementById('archive-favorites').checked=true;document.getElementById('archive-favorites').dispatchEvent(new Event('change'))")
+                    await until("document.querySelectorAll('.archive-card').length===1")
+                    await evaluate("document.getElementById('archive-reset').click()")
+                    await until("document.querySelectorAll('.archive-card').length===2")
+                    await evaluate("document.getElementById('archive-kind').value='video' ;document.getElementById('archive-kind').dispatchEvent(new Event('change'))")
                     await until("document.querySelectorAll('.archive-card').length===1&&document.querySelector('.archive-card strong').textContent==='sample.mp4'")
                     async with portal.get('http://127.0.0.1:8787/api/archive/thumb/'+account+'/'+item+'/sample.mp4')as response:
                         assert response.status==200 and (await response.read()).startswith(b'\xff\xd8')

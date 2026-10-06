@@ -3,10 +3,12 @@ WORKDIR /src/gphotos-cdp
 COPY login/go.mod login/go.sum ./
 RUN go mod download
 COPY login/gphotos-cdp-main.go ./main.go
+COPY login/gphotos-cdp-main_test.go ./main_test.go
+RUN gofmt -w main.go main_test.go && go test -mod=readonly .
 RUN CGO_ENABLED=0 go build -buildvcs=false -mod=readonly -o /go/bin/gphotos-cdp .
 
 FROM python:3.12-slim-bookworm
-ARG VERSION=0.2.0-beta.7
+ARG VERSION=0.2.0-beta.8
 ARG REVISION
 LABEL org.opencontainers.image.title="PhotoHarbor" \
       org.opencontainers.image.description="Local backup for Google Photos" \

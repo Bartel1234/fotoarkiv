@@ -36,7 +36,7 @@ class ProgressTests(unittest.TestCase):
             source=(ROOT/'account-worker.sh').read_text().replace('/control',str(control)).replace('/download',str(dest))
             script=root/'worker.sh';script.write_text(source)
             command=fake/'gphotos-cdp';command.write_text('#!/bin/sh\ncase "$*" in *-index-albums*) expected=indexing;; *) expected=downloading;; esac\nactual=$(cat "$TEST_CONTROL/phase")\n[ "$actual" = "$expected" ] || exit 90\necho "$actual" >> "$TEST_CONTROL/observed"\n');command.chmod(0o755)
-            command=fake/'python3';command.write_text('#!/bin/sh\ncase "$1" in *library_tools.py) exit 0;; esac\ncase "$2" in begin) exit 0;; check) expected=checking;; *) expected=organizing;; esac\nactual=$(cat "$TEST_CONTROL/phase")\n[ "$actual" = "$expected" ] || exit 91\necho "$actual" >> "$TEST_CONTROL/observed"\n');command.chmod(0o755)
+            command=fake/'python3';command.write_text('#!/bin/sh\ncase "$1" in *library_tools.py|*operations.py) exit 0;; -c) echo 2; exit 0;; esac\ncase "$2" in begin) exit 0;; check) expected=checking;; *) expected=organizing;; esac\nactual=$(cat "$TEST_CONTROL/phase")\n[ "$actual" = "$expected" ] || exit 91\necho "$actual" >> "$TEST_CONTROL/observed"\n');command.chmod(0o755)
             env=dict(os.environ,PATH=str(fake)+':'+os.environ['PATH'],TEST_CONTROL=str(control))
             subprocess.run(['/bin/sh',str(script),'legacy','--run','0'],env=env,check=True,capture_output=True)
             self.assertEqual((control/'observed').read_text().splitlines(),['checking','indexing','organizing','downloading','organizing','checking'])

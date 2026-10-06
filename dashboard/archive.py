@@ -38,6 +38,8 @@ MAX_ZIP_BYTES = 10 * 1024**3
 def account_root(request, account):
     if account != 'legacy' and account not in request.app['account_names']():
         raise web.HTTPNotFound(text='Ukendt konto')
+    if account!='legacy' and (request.app['thumb_root'].parent/'accounts'/account/'removal-pending').exists():
+        raise web.HTTPConflict(text='Account removal is in progress')
     root = request.app['photos_root'] / ('' if account == 'legacy' else account)
     if root.is_symlink() or not root.is_dir():
         raise web.HTTPNotFound(text='Kontoens mappe findes ikke')
@@ -78,6 +80,32 @@ def media_path(request, account, item, name):
     return path
 
 
+def favorite_database(root,create=True):
+    target=checked_path(root,'.fotoarkiv/favorites.sqlite')
+    if not create: return target if target.is_file() else None
+    target.parent.mkdir(parents=True,exist_ok=True)
+    with sqlite3.connect(target) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS favorites(id TEXT,name TEXT,PRIMARY KEY(id,name))')
+    return target
+
+async def favorite_action(request):
+    if request.content_type!='application/json' or (request.content_length or 0)>4096: raise web.HTTPBadRequest()
+    try: data=await request.json()
+    except ValueError: raise web.HTTPBadRequest()
+    if not isinstance(data,dict) or not request.app['valid_token'](data.get('token','')): raise web.HTTPForbidden()
+    if type(data.get('favorite')) is not bool: raise web.HTTPBadRequest()
+    def save(root):
+        target=favorite_database(root)
+        with sqlite3.connect(target) as db:
+            if data['favorite']: db.execute('INSERT OR IGNORE INTO favorites VALUES(?,?)',(data['id'],data['name']))
+            else: db.execute('DELETE FROM favorites WHERE id=? AND name=?',(data['id'],data['name']))
+    async with request.app.get('account_lock',request.app['favorite_lock']):
+        root=account_root(request,data.get('account',''))
+        await asyncio.to_thread(media_path,request,data.get('account',''),data.get('id',''),data.get('name',''))
+        await asyncio.to_thread(save,root)
+    return web.json_response({'ok':True,'favorite':data['favorite']})
+
+
 async def listing(request):
     account=request.query.get('account','')
     root=account_root(request,account)
@@ -90,11 +118,24 @@ async def listing(request):
     sort=request.query.get('sort','newest')
     if not 0<=year<=9999 or not 0<=month<=12 or kind not in ('','image','video') or sort not in ('newest','oldest'): raise web.HTTPBadRequest(text='Invalid filter')
     target=await request.app['archive_index'].ensure(account,root)
-    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page,year,month,kind,sort,start,end)
+    favorite_db=await asyncio.to_thread(favorite_database,root,False)
+    favorites=request.query.get('favorites','0')=='1'
+    anniversary=request.query.get('anniversary','')
+    if anniversary:
+        from datetime import datetime
+        try:
+            if not re.fullmatch(r'\d{2}-\d{2}',anniversary): raise ValueError()
+            datetime.strptime('2000-'+anniversary,'%Y-%m-%d')
+        except ValueError: raise web.HTTPBadRequest(text='Invalid anniversary date')
+    rows,total,albums=await asyncio.to_thread(query_index,target,album,search,page,year,month,kind,sort,start,end,favorite_db,favorites,anniversary)
+    def saved():
+        if not favorite_db: return set()
+        with sqlite3.connect(favorite_db) as db: return {(item,name) for item,name in db.execute('SELECT id,name FROM favorites')}
+    favorite_set=await asyncio.to_thread(saved)
     items=[]
     for item,name,size,kind,label,source in rows:
         suffix='/'.join(quote(part,safe='') for part in (account,item,name))
-        items.append({'id':item,'name':name,'size':size,'kind':kind,'modified':label,
+        items.append({'favorite':(item,name) in favorite_set,'id':item,'name':name,'size':size,'kind':kind,'modified':label,
                       'date_source':source,'url':'/api/archive/file/'+suffix,
                       'thumb':'/api/archive/thumb/'+suffix})
     def report():
@@ -261,6 +302,7 @@ async def download_zip(request):
 def setup(app, photos_root, thumb_root, account_names, valid_token):
     app['archive_index'] = ArchiveIndex(thumb_root.parent / 'archive-index')
     app['thumb_slots'] = asyncio.Semaphore(3)
+    app['favorite_lock'] = asyncio.Lock()
     async def cleanup(app):
         await app['archive_index'].close()
     app.on_cleanup.append(cleanup)
@@ -274,3 +316,4 @@ def setup(app, photos_root, thumb_root, account_names, valid_token):
     app.router.add_post('/api/archive/zip', download_zip)
     app.router.add_post('/api/archive/album', album_info)
     app.router.add_post('/api/archive/range', range_info)
+    app.router.add_post('/api/archive/favorite', favorite_action)

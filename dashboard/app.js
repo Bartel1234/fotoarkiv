@@ -146,6 +146,7 @@ function renderAccounts(accounts, summary) {
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
     feedback.textContent = phase ? phase.detail : account.stopping ? I18n.t('◷ Afbryder backup – venter på at processerne lukker.') : account.running ? I18n.t('● Backup kører nu – nye filer vises i overblikket.') : account.pending ? account.login_active ? I18n.t('◷ Afslutter login-browseren før backup…') : I18n.t('◷ Start er bestilt – venter på synkroniseringsmotoren.') : account.login_active ? I18n.t('Login-browseren er åben. Start backup lukker den automatisk.') : '';
+    const jobDetail=renderJobDetails(account);if(jobDetail)feedback.textContent+=' · '+jobDetail;
     const verification=document.createElement('small');verification.className='account-verification';verification.textContent=verificationText(account.verification);
     if(account.storage?.warning)verification.textContent+=' · '+I18n.t('Lav diskplads: ')+human(account.storage.free)+I18n.t(' ledig');
     card.append(detail, controls, feedback, verification);

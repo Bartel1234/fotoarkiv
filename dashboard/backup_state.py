@@ -22,7 +22,7 @@ def load(path, default):
 
 def settings(state):
     default = {'enabled': True, 'hour': int(os.environ.get('SYNC_HOUR', '3')), 'days': list(range(7)),
-               'notify_url': '', 'notify_success': False, 'min_free_gb': 2, 'min_free_percent': 2}
+               'notify_url': '', 'notify_success': False, 'min_free_gb': 2, 'min_free_percent': 2, 'email_enabled': False, 'email_mode': 'all', 'retry_count': 2, 'index_hours': 24}
     default.update(load(state / 'settings.json', {}))
     return default
 
@@ -45,7 +45,12 @@ def validate(data):
         if type(value) not in (int, float) or not __import__('math').isfinite(value) or not 0 <= value <= maximum:
             raise ValueError('Invalid free-space reserve')
         limits[key] = value
-    return {'enabled': enabled, 'hour': hour, 'days': sorted(set(days)), 'notify_url': url,
+    for key, default, maximum in [('retry_count',2,3),('index_hours',24,168)]:
+        value=data.get(key,default)
+        if type(value) is not int or not 0<=value<=maximum: raise ValueError('Invalid retry or indexing setting')
+        limits[key]=value
+    if type(data.get('email_enabled',False)) is not bool or data.get('email_mode','all') not in ('all','errors'): raise ValueError('Invalid email policy')
+    return {'email_enabled':data.get('email_enabled',False),'email_mode':data.get('email_mode','all'),'enabled': enabled, 'hour': hour, 'days': sorted(set(days)), 'notify_url': url,
             'notify_success': data.get('notify_success', False), **limits}
 
 
@@ -141,6 +146,8 @@ def prepare_repair(root):
 
 
 def begin(root, state, mode):
+    for name in ('downloads.jsonl','live.json','download-failure.json','retry-count'):
+        (state/name).unlink(missing_ok=True)
     atomic(state / 'current-run.json', {'started': time.time(), 'before': inventory(root), 'mode': mode})
 
 
@@ -153,6 +160,10 @@ def finish(root, state, result):
              'new_files': max(0, after['files']-current['before']['files']),
              'new_bytes': max(0, after['bytes']-current['before']['bytes']),
              'verification': load(state / 'verification.json', None)}
+    from operations import downloaded, notify_email
+    entry.update(downloaded(state))
+    try: entry['retries']=int((state/'retry-count').read_text())
+    except (OSError,ValueError): entry['retries']=0
     history = load(state / 'history.json', [])
     atomic(state / 'history.json', [entry, *history][:50])
     if result == 0 and current['mode'] in ('backup','repair'): atomic(state / 'last-success.json', entry)
@@ -172,6 +183,7 @@ def finish(root, state, result):
         except Exception:
             atomic(state / 'notification-status.json', {'ok': False, 'at': entry['finished']})
             print('Notification failed; backup result is unchanged', flush=True)
+    notify_email(state,entry)
     return entry
 
 
