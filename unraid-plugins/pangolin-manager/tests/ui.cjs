@@ -18,7 +18,10 @@ function mount(html){
  w.setInterval=fn=>{interval=fn;return 1;};
  w.fetch=async(url,options)=>{
   const body=new URLSearchParams(options.body||'');const action=body.get('action')||new URL(url,'http://unraid.test').searchParams.get('action');
-  if(options.method==='POST')assert.equal(body.get('csrf_token'),'fixture-csrf');
+  if(options.method==='POST'){
+   assert.equal(body.get('csrf_token'),'fixture-csrf');
+   assert.equal(body.get('pm_csrf_token'),'fixture-csrf');
+  }
   const result={ok:true};
   if(action==='status'){if(denyStatus)throw Error('Fixture network failed');result.status=status;}
   if(action==='test'){result.status=status;testCount++;}

@@ -4,7 +4,7 @@ Icon="exchange"
 Tag="exchange"
 Cond="version_compare(parse_ini_file('/etc/unraid-version')['version'],'7.0.0','>=')"
 ---
-<link rel="stylesheet" href="/plugins/pangolin-manager/style.css?v=0.1.0">
+<link rel="stylesheet" href="/plugins/pangolin-manager/style.css?v=0.1.0-beta.4">
 <?php
 $mytiles['pangolin-manager']['column1'] = <<<'PM_TILE'
 <tbody class="sortable" title="Pangolin / Newt">
@@ -13,4 +13,4 @@ $mytiles['pangolin-manager']['column1'] = <<<'PM_TILE'
 </tbody>
 PM_TILE;
 ?>
-<script src="/plugins/pangolin-manager/app.js?v=0.1.0"></script>
+<script src="/plugins/pangolin-manager/app.js?v=0.1.0-beta.4"></script>

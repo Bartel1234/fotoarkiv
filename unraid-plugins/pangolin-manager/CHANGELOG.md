@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-beta.4 — 2026-10-10
+
+- Fix false session-expired errors when saving settings, testing, viewing logs or
+  restarting: native `local_prepend.php` consumes the standard CSRF token before
+  plugin code executes. Send a separate `pm_csrf_token` copy and validate it
+  independently against the current Unraid token.
+- Keep native CSRF validation and reject missing, empty or invalid plugin tokens.
+- Reproduce the failure and test the fix using native preprocessing fixtures.
+- Version JavaScript/CSS URLs to refresh stale browser caches after updating;
+  show the full application version in the panel.
+- Increase the Unraid manifest version to `2026.10.10.3`.
+
 ## 0.1.0-beta.3 — 2026-10-10
 
 - Fix container discovery compatibility: prefer the local Docker socket API, as

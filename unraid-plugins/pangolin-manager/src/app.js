@@ -13,7 +13,9 @@
       const token = typeof window.csrf_token === 'string' ? window.csrf_token : '';
       if (!token) throw new Error('Sessionen kunne ikke læses. Genindlæs Unraid-siden.');
       options.method = 'POST';
-      options.body = new URLSearchParams({action, csrf_token: token, payload: JSON.stringify(payload), ...extra});
+      // Unraid validates and removes csrf_token in local_prepend.php. Preserve
+      // a separately named copy for the plugin's own fail-closed validation.
+      options.body = new URLSearchParams({action, csrf_token: token, pm_csrf_token: token, payload: JSON.stringify(payload), ...extra});
       url = base;
     }
     const controller = new AbortController();options.signal=controller.signal;

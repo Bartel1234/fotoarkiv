@@ -15,7 +15,10 @@ try {
         pm_response(['ok'=>false,'error'=>'Ukendt handling.'],404);
     }
     if ($method!=='POST') pm_response(['ok'=>false,'error'=>'Metoden understøttes ikke.'],405);
-    if (!pm_csrf_valid((string)($_POST['csrf_token']??''))) pm_response(['ok'=>false,'error'=>'Sessionen er udløbet. Genindlæs siden.'],403);
+    // Native Unraid setup consumes csrf_token before this file executes.
+    $pluginToken=$_POST['pm_csrf_token']??'';
+    if (!is_string($pluginToken) || !pm_csrf_valid($pluginToken))
+        pm_response(['ok'=>false,'error'=>'Sessionen er udløbet. Genindlæs siden.'],403);
     if ($action==='save') {
         if (strlen((string)($_POST['payload']??''))>24000) throw new InvalidArgumentException('Indstillingerne er for store.');
         $input=json_decode((string)($_POST['payload']??''),true);

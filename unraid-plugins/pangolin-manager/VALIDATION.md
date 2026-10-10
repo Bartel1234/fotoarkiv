@@ -1,4 +1,4 @@
-# Validation — 0.1.0-beta.3
+# Validation — 0.1.0-beta.4
 
 Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 
@@ -6,8 +6,14 @@ Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 - Backend regression checks for validation, command/header injection, subprocess
   timeout, HTTP classification, unknown API schema, token redaction and notification
   outage/recovery behavior.
-- 40 backend regression checks and 23 real HTTP/PHP integration checks, each run
-  with normal PHP and with `proc_open` disabled. Docker CLI and HTTP API are fixtures.
+- 40 backend regression checks and 30 real HTTP/PHP integration checks. Integration
+  runs cover ordinary PHP, native Unraid-style CSRF preprocessing, and native
+  preprocessing with `proc_open` disabled. Docker CLI and HTTP API are fixtures.
+- Reproduced beta.3 failures with a fixture of native `local_prepend.php` behavior:
+  the standard CSRF field is validated, then removed before plugin execution.
+  Beta.4 save, test, logs and confirmed restart succeed under that fixture.
+- Missing/empty/invalid plugin tokens reject writes, even with a valid native
+  token. Rejected saves do not create settings. All POST actions remain protected.
 - Docker API list/inspect parsing, CLI fallback, suggested Newt ordering, empty
   list, missing container, malformed responses, controlled errors and secret
   exclusion from error responses.
@@ -24,7 +30,14 @@ Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 User screenshots confirm installation and the Tools settings page on DeathStar
 (Unraid 7.3.2). Beta.2 container discovery failed with an uninformative error.
 The exact server-side cause is not confirmed. Beta.3 addresses socket/CLI/PHP
-compatibility and supplies actionable errors. Its on-server outcome is pending.
+compatibility and supplies actionable errors. A later screenshot confirms
+container discovery and selection work on DeathStar, but saving was rejected
+with a false session-expired error.
+
+Unraid source `emhttp/plugins/dynamix/include/local_prepend.php` confirms it removes
+`$_POST[csrf_token]` and the native CSRF header after validation. Beta.4 fixes the
+plugin recheck using a separately named copy, which is still validated against
+Unraid state. Beta.4 on-server save verification is pending.
 
 Not performed: direct on-server testing, real Docker interaction,
 actual Pangolin/Newt API traffic, cron scheduling after a real reboot and delivery
@@ -44,6 +57,6 @@ The first on-server trial should verify:
 6. If enabled, exercise a sustained outage and one recovery notification.
 7. Verify removal stops future polling without removing Newt or settings.
 
-Beta.3 installer XML, embedded payload checksum, archive contents and installer
+Beta.4 installer XML, embedded payload checksum, archive contents and installer
 scripts were validated after rebuilding. The published raw manifest must match
 the locally validated file.

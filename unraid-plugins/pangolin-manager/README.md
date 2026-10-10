@@ -1,6 +1,6 @@
 # Pangolin Manager for Unraid
 
-Version **0.1.0-beta.3** · Unraid **7.x** · Danish interface.
+Version **0.1.0-beta.4** · Unraid **7.x** · Danish interface.
 
 A native Unraid plugin for an existing Newt container: Dashboard tile, status panel,
 local HTTP checks, optional Pangolin integration API, redacted Newt logs and opt-in
@@ -43,7 +43,10 @@ Start with [INSTALLATION-DA.md](INSTALLATION-DA.md).
 ## Security and storage
 
 The UI and endpoint use the existing authenticated Unraid WebGUI. Writes, manual
-checks, logs and restart require Unraid's CSRF token. The plugin does not open a
+checks, logs and restart require Unraid's CSRF token. The browser sends the
+standard `csrf_token` for native validation and an identical `pm_csrf_token` copy
+for the plugin's independent validation, because Unraid consumes its standard
+field before endpoint code executes. Neither check is skipped. The plugin does not open a
 public endpoint or change Pangolin access rules. Keep Unraid management access
 restricted as usual.
 

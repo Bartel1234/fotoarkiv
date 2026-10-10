@@ -71,12 +71,30 @@ elif sys.argv[1]=='restart': print('fixture-id')
 else: sys.exit(2)
 ''')
     docker.chmod(0o755)
+    if os.environ.get('PM_TEST_UNRAID_PREPEND'):
+        # Simulate native local_prepend.php: validate the Unraid token and then
+        # consume its POST field and header before the plugin endpoint runs.
+        prepend=tmp/'native-prepend.php'
+        prepend.write_text('''<?php
+if (($_SERVER['REQUEST_METHOD']??'')==='POST') {
+    $state=parse_ini_file(__DIR__.'/var.ini');
+    $token=$_POST['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??'');
+    if (!is_string($token) || !hash_equals($state['csrf_token'],$token)) {
+        http_response_code(403);header('Content-Type: application/json');
+        echo json_encode(['ok'=>false,'error'=>'Native CSRF rejected']);exit;
+    }
+    unset($_POST['csrf_token'],$_SERVER['HTTP_X_CSRF_TOKEN']);
+}
+''')
+        args += ['-d','auto_prepend_file='+str(prepend)]
     env = dict(os.environ, PATH=str(tmp)+os.pathsep+os.environ['PATH'])
     api_port = port()
     server = subprocess.Popen(args+['-S',f'127.0.0.1:{api_port}','-t',str(src)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     url = f'http://127.0.0.1:{api_port}/api.php'
-    def request(action, payload=None, token='test-csrf', **extra):
-        data = None if payload is None else urlencode({'action':action,'csrf_token':token,'payload':json.dumps(payload),**extra}).encode()
+    def request(action, payload=None, token='test-csrf', plugin_token='same', **extra):
+        fields={'action':action,'csrf_token':token,'payload':json.dumps(payload),**extra}
+        if plugin_token is not None: fields['pm_csrf_token']=token if plugin_token=='same' else plugin_token
+        data = None if payload is None else urlencode(fields).encode()
         target=url+('?action='+action if data is None else '')
         try:
             with urllib.request.urlopen(urllib.request.Request(target,data=data),timeout=20) as r:return r.status,json.load(r)
@@ -100,6 +118,12 @@ else: sys.exit(2)
                          {'name':'Broken','url':endpoint+'/bad','mode':'http','public_url':''},
                          {'name':'Protected','url':endpoint+'/auth','mode':'http','public_url':''}]}
         expect(request('save',cfg,token='wrong')[0]==403,'Reject wrong CSRF token')
+        expect(request('save',cfg,plugin_token=None)[0]==403,'Reject missing plugin token even with valid native token')
+        expect(request('save',cfg,plugin_token='wrong')[0]==403,'Reject invalid plugin token even with valid native token')
+        expect(request('save',cfg,plugin_token='')[0]==403,'Reject empty plugin token')
+        expect(not (tmp/'settings.json').exists(),'Rejected save never writes configuration')
+        for action in ['test','logs','restart']:
+            expect(request(action,{},plugin_token='wrong',confirm='restart-newt')[0]==403,'Protect '+action+' with plugin token')
         expect(request('save',dict(cfg,container='--help'))[0]==400,'Reject unsafe container over HTTP')
         expect(request('save',cfg)[0]==200,'Save valid configuration')
         public=request('settings')[1]['settings'];expect(public['has_api_key'] and 'api_key' not in public,'Do not expose API key in settings')
@@ -139,6 +163,6 @@ else: sys.exit(2)
         Origin.docker_mode='empty';expect(request('containers')[1]['containers']==[],'Empty Docker API list is successful')
         Origin.docker_mode='invalid';code,body=request('containers');expect(code==503 and 'ugyldigt svar' in body['error'],'Malformed Docker response does not silently produce an empty list')
         Origin.docker_mode='error';code,body=request('containers');expect(code==503 and 'HTTP 500' in body['error'],'Docker HTTP error produces actionable message')
-        print(f'PASS: {count} HTTP/PHP integration checks (parallel sample {duration:.2f}s; proc_open disabled: {bool(os.environ.get("PM_TEST_DISABLE_PROC_OPEN"))})')
+        print(f'PASS: {count} HTTP/PHP integration checks (parallel sample {duration:.2f}s; proc_open disabled: {bool(os.environ.get("PM_TEST_DISABLE_PROC_OPEN"))}; native preprocessing: {bool(os.environ.get("PM_TEST_UNRAID_PREPEND"))})')
     finally:
         server.terminate();server.wait(timeout=5);origin.shutdown()

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-// Pangolin Manager 0.1.0-beta.3. No third-party runtime dependencies.
-const PM_VERSION = '0.1.0-beta.3';
+// Pangolin Manager 0.1.0-beta.4. No third-party runtime dependencies.
+const PM_VERSION = '0.1.0-beta.4';
 // Only explicitly authored, safe messages from this class reach the browser.
 class PMException extends RuntimeException {}
 function pm_paths(): array {

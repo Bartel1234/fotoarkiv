@@ -9,8 +9,8 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '0.1.0-beta.3'
-DATE = '2026.10.10.2'
+VERSION = '0.1.0-beta.4'
+DATE = '2026.10.10.3'
 PLUGIN_URL = 'https://raw.githubusercontent.com/Bartel1234/fotoarkiv/main/unraid-plugins/pangolin-manager/pangolin-manager.plg'
 dest = ROOT / 'dist'
 dest.mkdir(exist_ok=True)
@@ -54,7 +54,8 @@ echo "Pangolin Manager afinstalleret. Indstillinger og din Newt-container er bev
 '''
 xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <PLUGIN name="pangolin-manager" author="Lars Bartel" version="{DATE}" launch="Tools/PangolinManager" pluginURL="{PLUGIN_URL}" IconFA="exchange" icon="exchange" min="7.0.0">
-<CHANGES>0.1.0-beta.3: Lokal Docker-forbindelse, PHP-kompatibilitet og konkrete fejlbeskeder.
+<CHANGES>0.1.0-beta.4: Retter Gem/session-fejl efter Unraids tokenkontrol og opdaterer browsercache.
+0.1.0-beta.3: Lokal Docker-forbindelse, PHP-kompatibilitet og konkrete fejlbeskeder.
 0.1.0-beta.2: GitHub-installation og opdateringsadresse.
 0.1.0-beta.1: Dashboard-widget, Newt-status, valgfri API, lokale HTTP-kontroller, logs og notifikationer. Første testudgave; ikke afprøvet på en fysisk Unraid-server.</CHANGES>
 <FILE Name="{package}" Type="base64"><INLINE>{base64.b64encode(payload).decode()}</INLINE><SHA256>{sha}</SHA256></FILE>

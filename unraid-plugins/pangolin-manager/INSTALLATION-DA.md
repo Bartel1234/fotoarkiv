@@ -1,4 +1,4 @@
-# Installation: Pangolin Manager 0.1.0-beta.3
+# Installation: Pangolin Manager 0.1.0-beta.4
 
 Dette er en testudgave til **Unraid 7.x**. Panelet er installeret på DeathStar;
 containerforbindelsen i denne rettelse skal stadig kontrolleres på serveren.
@@ -19,12 +19,15 @@ Unraid henter manifestet fra GitHub. Det indeholder hele programmet med en SHA-2
 kontrolsum og downloader ingen yderligere runtime-afhængigheder. Indstillinger
 bevares ved opdateringer. Brug **Plugins → Check for Updates** til senere versioner.
 
-### Opdater fra beta.2
+### Opdater fra beta.2 eller beta.3
 
 Åbn **Plugins → Installed Plugins → Check for Updates**, og vælg **Update** ved
-Pangolin Manager. Den nye pluginversion er `2026.10.10.2` (beta.3). Genindlæs derefter
+Pangolin Manager. Den nye pluginversion er `2026.10.10.3` (beta.4). Genindlæs derefter
 **Tools → Pangolin Manager → Indstillinger**, og vælg Newt-containeren.
-Hvis containerlisten fortsat fejler, viser panelet nu en konkret fejlbesked.
+Beta.4 retter den fejlagtige besked “Sessionen er udløbet”, som kunne vises ved
+Gem, Test, Newt-log og Genstart. Genindlæs panelet efter opdateringen; versionsfeltet
+skal vise `0.1.0-beta.4`. Hvis siden stadig viser en tidligere version, luk fanen
+og åbn panelet igen.
 
 **Alternativ: lokal installation**
 
