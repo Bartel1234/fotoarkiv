@@ -1,0 +1,31 @@
+Menu="Tools:95"
+Title="Pangolin Manager"
+Icon="exchange"
+Tag="exchange"
+---
+<link rel="stylesheet" href="/plugins/pangolin-manager/style.css?v=0.1.0">
+<div class="pm-app" id="pm-panel">
+  <header class="pm-header"><div><span class="pm-eyebrow">DEATHSTAR · FJERNADGANG</span><h2>Pangolin Manager <small>beta 0.1</small></h2><p>Overblik over Newt, din tunnel og dine lokale tjenester.</p></div><a class="pm-btn" href="/Dashboard">Dashboard</a></header>
+  <nav class="pm-tabs" aria-label="Pangolin-visning"><button type="button" data-tab="overview" class="active">Overblik</button><button type="button" data-tab="settings">Indstillinger</button><button type="button" data-tab="logs">Newt-log</button></nav>
+  <div id="pm-message" role="status" aria-live="polite"></div>
+  <section data-view="overview">
+    <div class="pm-toolbar"><span data-pm-time>Afventer første kontrol</span><div><button class="pm-btn pm-primary" type="button" data-pm-test>Test forbindelse</button><a class="pm-btn" data-pm-open hidden target="_blank" rel="noopener noreferrer">Åbn Pangolin</a></div></div>
+    <div class="pm-cards"><article class="pm-card"><span class="pm-eyebrow">NEWT-CONTAINER</span><h3 data-pm-container>Ukendt</h3><p data-pm-container-detail>Vælg din container i indstillingerne.</p><span data-pm-restarts></span></article><article class="pm-card"><span class="pm-eyebrow">TUNNEL</span><h3 data-pm-tunnel>Ukendt</h3><p data-pm-tunnel-detail>Containerstatus alene bekræfter ikke forbindelsen.</p></article><article class="pm-card"><span class="pm-eyebrow">PANGOLIN-SERVER</span><h3 data-pm-endpoint>Ukendt</h3><p data-pm-endpoint-detail>Afventer kontrol.</p></article></div>
+    <div class="pm-summary" data-pm-summary>Vælg din Newt-container for at komme i gang.</div>
+    <div class="pm-section-heading"><h3>Lokale tjenester</h3><span data-pm-services-summary>Ingen tjenester tilføjet</span></div>
+    <p class="pm-muted">Kontrollerne foretages fra Unraid. De bekræfter ikke adgang fra internettet eller fra Newts eget Docker-netværk.</p>
+    <div class="pm-table-wrap"><table class="pm-table"><thead><tr><th>Tjeneste</th><th>Lokal kontrol</th><th>Status</th><th>Svar</th><th>Link</th></tr></thead><tbody data-pm-services></tbody></table></div>
+    <div class="pm-maintenance"><div><h3>Genstart Newt</h3><p>Genstart afbryder fjernadgangen kortvarigt. Brug lokal adgang til Unraid.</p></div><button class="pm-btn" type="button" id="pm-restart">Genstart Newt…</button></div>
+  </section>
+  <section data-view="settings" hidden><form id="pm-settings">
+    <h3>Forbindelse</h3><div class="pm-form-grid"><label>Newt-container<select name="container"><option value="">Vælg container…</option></select></label><label>Pangolin-adresse<input name="endpoint" type="url" placeholder="https://pangolin.dit-domæne.dk"><span>Lad feltet stå tomt for at bruge PANGOLIN_ENDPOINT fra containeren.</span></label><label>Healthcheck-fil i containeren<input name="health_file" placeholder="/tmp/healthy"><span>Lad feltet stå tomt for at bruge containerens HEALTH_FILE.</span></label></div>
+    <div class="pm-note"><strong>Tunnelstatus kræver en måling.</strong> Newt kan oprette en forbindelsesfil med <code>HEALTH_FILE=/tmp/healthy</code>. Angiv kun filen, hvis Newt er konfigureret til at oprette den. Pluginet ændrer ikke containerens opsætning. Hvis kontrolkommandoen ikke findes i dit image, kan du bruge API i stedet.</div>
+    <details class="pm-api"><summary>Valgfrit: forbind Pangolins API</summary><p>Brug en organisationsnøgle med adgang til at læse sites. API bruges til tunnelstatus, når en lokal healthcheck ikke kan måles.</p><div class="pm-form-grid"><label>API-baseadresse, inklusive /v1<input name="api_url" type="url" placeholder="https://api.dit-domæne.dk/v1"></label><label>Organisation-ID<input name="org_id" autocomplete="off"></label><label>Site-ID<input name="site_id" autocomplete="off"></label><label>API-nøgle<input name="api_key" type="password" autocomplete="new-password" placeholder="Tomt felt bevarer gemt nøgle"><span id="pm-api-key-state"></span></label></div><label class="pm-checkbox"><input name="clear_api_key" type="checkbox">Fjern den gemte API-nøgle ved næste gem</label></details>
+    <div class="pm-section-heading"><h3>Tjenester</h3><button class="pm-btn" type="button" id="pm-add-service">Tilføj tjeneste</button></div><p class="pm-muted">Brug IP/port eller en adresse, Unraid kan nå. Vælg “Server svarer” til tjenester med login. Offentligt link er kun en genvej.</p><div id="pm-service-editor"></div>
+    <label class="pm-checkbox"><input name="notifications" type="checkbox">Brug Unraid-notifikationer ved fejl i mindst 2 minutter og ved genoprettelse</label><p class="pm-muted">Notifikationer er slået fra som standard. Ukendt status udløser ikke fejlalarm. Levering følger Unraids eksisterende notifikationsopsætning.</p>
+    <div class="pm-save"><button class="pm-btn pm-primary" type="submit">Gem indstillinger</button><span>Kontroller kører hvert 30. sekund. Ingen automatisk genstart.</span></div>
+  </form></section>
+  <section data-view="logs" hidden><div class="pm-toolbar"><p>Op til 120 linjer fra det seneste døgn. Kendte hemmeligheder skjules.</p><button class="pm-btn" type="button" id="pm-load-logs">Opdatér log</button></div><pre id="pm-log" tabindex="0">Klik på Opdatér log.</pre><p class="pm-muted">Gennemgå loggen, før du deler den. Der kan stadig være adresser eller personoplysninger.</p></section>
+  <dialog id="pm-restart-dialog"><h3>Genstart Newt?</h3><p>Alle forbindelser gennem denne Newt-container afbrydes kortvarigt. Hvis du bruger Pangolin til at åbne Unraid, kan denne side miste forbindelsen.</p><div class="pm-actions"><button class="pm-btn" type="button" id="pm-cancel-restart">Annuller</button><button class="pm-btn pm-primary" type="button" id="pm-confirm-restart">Genstart Newt</button></div></dialog>
+</div>
+<script src="/plugins/pangolin-manager/app.js?v=0.1.0"></script>

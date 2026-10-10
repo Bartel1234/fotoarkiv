@@ -1,0 +1,16 @@
+Menu="Dashboard:0"
+Title="Pangolin / Newt"
+Icon="exchange"
+Tag="exchange"
+Cond="version_compare(parse_ini_file('/etc/unraid-version')['version'],'7.0.0','>=')"
+---
+<link rel="stylesheet" href="/plugins/pangolin-manager/style.css?v=0.1.0">
+<?php
+$mytiles['pangolin-manager']['column1'] = <<<'PM_TILE'
+<tbody class="sortable" title="Pangolin / Newt">
+<tr><td><i class="fa fa-exchange icon" style="font-size:32px"></i><div class="section">Pangolin / Newt<br><span class="pm-widget-subtitle">Fjernadgang</span></div><a class="control" href="/Tools/PangolinManager" title="Åbn Pangolin Manager"><i class="fa fa-cog"></i></a></td></tr>
+<tr><td><div class="pm-widget" id="pm-widget"><div class="pm-widget-row"><span>Newt-container</span><strong data-pm-container>Ukendt</strong></div><div class="pm-widget-row"><span>Tunnel</span><strong data-pm-tunnel>Ukendt</strong></div><div class="pm-widget-row"><span>Lokale tjenester</span><strong data-pm-services-summary>Ingen måling</strong></div><p data-pm-summary class="pm-widget-summary">Henter status…</p><div class="pm-widget-footer"><span data-pm-time>Afventer kontrol</span><div class="pm-actions"><a class="pm-btn" href="/Tools/PangolinManager">Åbn panel</a><button class="pm-btn" type="button" data-pm-test>Test</button><a class="pm-btn" data-pm-open hidden target="_blank" rel="noopener noreferrer">Pangolin</a></div></div><div data-pm-widget-message role="status"></div></div></td></tr>
+</tbody>
+PM_TILE;
+?>
+<script src="/plugins/pangolin-manager/app.js?v=0.1.0"></script>
