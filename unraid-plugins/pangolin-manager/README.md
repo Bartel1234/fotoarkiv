@@ -1,6 +1,6 @@
 # Pangolin Manager for Unraid
 
-Version **0.1.0-beta.2** · Unraid **7.x** · Danish interface.
+Version **0.1.0-beta.3** · Unraid **7.x** · Danish interface.
 
 A native Unraid plugin for an existing Newt container: Dashboard tile, status panel,
 local HTTP checks, optional Pangolin integration API, redacted Newt logs and opt-in
@@ -25,7 +25,11 @@ Start with [INSTALLATION-DA.md](INSTALLATION-DA.md).
 - HTTP health mode accepts 2xx/3xx. 401/403 means unknown health. Reachability mode
   accepts any HTTP response; it establishes server reachability, not application health.
 - TLS verification is enabled. Redirects are not followed. Individual HTTP tests
-  have a 2.5-second timeout. Subprocesses have bounded runtimes and use argument arrays.
+  have a 2.5-second timeout. Subprocesses have bounded runtimes and use argument arrays, or individually
+  quoted arguments with the system timeout command when PHP disables `proc_open`.
+- Container discovery and inspection prefer the local `/var/run/docker.sock` API,
+  with a Docker CLI fallback and absolute executable paths where available.
+  Expected Docker errors are shown in the panel without returning raw stderr.
 - Status is cached in RAM. Cron samples at each minute and again 30 seconds later.
   The GUI polls at 30 seconds and pauses polling when the tab is hidden.
 - Results over 90 seconds old become **unknown**, rather than keeping a green badge.

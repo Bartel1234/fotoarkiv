@@ -1,7 +1,7 @@
-# Installation: Pangolin Manager 0.1.0-beta.2
+# Installation: Pangolin Manager 0.1.0-beta.3
 
-Dette er første testudgave til **Unraid 7.x**. Koden og brugerfladen er testet lokalt;
-widgetten og forbindelsen skal stadig afprøves på din egen Unraid-server.
+Dette er en testudgave til **Unraid 7.x**. Panelet er installeret på DeathStar;
+containerforbindelsen i denne rettelse skal stadig kontrolleres på serveren.
 
 ## 1. Installér pluginet
 
@@ -18,6 +18,13 @@ widgetten og forbindelsen skal stadig afprøves på din egen Unraid-server.
 Unraid henter manifestet fra GitHub. Det indeholder hele programmet med en SHA-256-
 kontrolsum og downloader ingen yderligere runtime-afhængigheder. Indstillinger
 bevares ved opdateringer. Brug **Plugins → Check for Updates** til senere versioner.
+
+### Opdater fra beta.2
+
+Åbn **Plugins → Installed Plugins → Check for Updates**, og vælg **Update** ved
+Pangolin Manager. Den nye pluginversion er `2026.10.10.2` (beta.3). Genindlæs derefter
+**Tools → Pangolin Manager → Indstillinger**, og vælg Newt-containeren.
+Hvis containerlisten fortsat fejler, viser panelet nu en konkret fejlbesked.
 
 **Alternativ: lokal installation**
 

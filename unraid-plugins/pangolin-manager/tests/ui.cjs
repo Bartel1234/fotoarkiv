@@ -7,7 +7,7 @@ let status={configured:true,checked_at:Math.floor(Date.now()/1000),stale:false,
  endpoint_url:'https://pangolin.example.com',summary:'Ingen fejl.',
  services:[{name:'PhotoHarbor',url:'http://192.168.1.10:8787',public_url:'https://fotos.example.com',state:'up',label:'Svarer',ms:12,mode:'http'}]};
 let settings={container:'Newt',endpoint:'https://pangolin.example.com',health_file:'',api_url:'',org_id:'',site_id:'',has_api_key:true,notifications:false,services:status.services};
-let restartCount=0,saved=null,testCount=0,denyStatus=false,logsCount=0;
+let restartCount=0,saved=null,testCount=0,denyStatus=false,denyContainers=false,logsCount=0;
 async function until(fn){for(let i=0;i<100;i++){if(fn())return;await new Promise(r=>setTimeout(r,10));}throw Error('Timed out waiting for UI');}
 function mount(html){
  const dom=new JSDOM(html,{url:'http://unraid.test/Tools/PangolinManager',runScripts:'outside-only',pretendToBeVisual:true});
@@ -23,7 +23,10 @@ function mount(html){
   if(action==='status'){if(denyStatus)throw Error('Fixture network failed');result.status=status;}
   if(action==='test'){result.status=status;testCount++;}
   if(action==='settings')result.settings=settings;
-  if(action==='containers')result.containers=[{name:'Newt',image:'fosrl/newt:fixture',suggested:true}];
+  if(action==='containers'){
+   if(denyContainers)return {ok:false,json:async()=>({ok:false,error:'Containerlisten kunne ikke hentes. Docker-kommandoen fejlede (kode 2).'})};
+   result.containers=[{name:'Newt',image:'fosrl/newt:fixture',suggested:true}];
+  }
   if(action==='save'){saved=JSON.parse(body.get('payload'));settings={...settings,...saved};delete settings.api_key;result.settings=settings;}
   if(action==='logs'){logsCount++;result.logs='NEWT_SECRET=[skjult]\nINFO connected';}
   if(action==='restart'){assert.equal(body.get('confirm'),'restart-newt');restartCount++;result.message='Newt er genstartet.';}
@@ -54,6 +57,12 @@ function mount(html){
  status={...status,stale:true,tunnel:{state:'unknown',label:'Forældet måling'},summary:'Målingerne er for gamle.'};await poll();assert.equal(doc.querySelector('[data-pm-tunnel]').dataset.state,'unknown');
  denyStatus=true;await poll();assert.equal(doc.querySelector('[data-pm-container]').dataset.state,'unknown');assert(doc.querySelector('#pm-message').textContent.includes('failed'));denyStatus=false;
  dom.window.close();
+ denyContainers=true;const failed=mount(html);
+ await until(()=>failed.doc.querySelector('[data-pm-container]').dataset.state==='up');
+ failed.doc.querySelector('[data-tab="settings"]').click();
+ await until(()=>failed.doc.querySelector('#pm-message').textContent.includes('kode 2'));
+ assert.equal(failed.doc.querySelector('[name="container"]').value,'Newt');
+ assert.equal(failed.doc.querySelector('[name="api_key"]').value,'');failed.w.close();denyContainers=false;
  const widget=fs.readFileSync(path.join(root,'src/PangolinManagerDashboard.page'),'utf8').split("<<<'PM_TILE'\n")[1].split('\nPM_TILE;')[0];
  status.tunnel={state:'up',label:'Forbundet'};status.stale=false;
  const tile=mount('<table>'+widget+'</table>');await until(()=>tile.doc.querySelector('[data-pm-tunnel]').textContent==='Forbundet');

@@ -27,12 +27,17 @@ try {
     if ($action==='logs') pm_response(['ok'=>true,'logs'=>pm_logs(pm_config())]);
     if ($action==='restart') {
         if (($_POST['confirm']??'')!=='restart-newt') throw new InvalidArgumentException('Genstart skal bekræftes.');
-        $c=pm_config();$ins=pm_inspect($c['container']);if (!$ins) throw new RuntimeException('Newt-containeren kunne ikke findes.');
+        $c=pm_config();$ins=pm_inspect($c['container']);if (!$ins) throw new PMException('Newt-containeren kunne ikke findes.');
         $r=pm_exec(['docker','restart','--time','10',$ins['Id']],18);
-        if ($r['code']!==0) throw new RuntimeException('Genstart kunne ikke bekræftes. Kontrollér Docker.');
+        if ($r['code']!==0) throw new PMException('Genstart kunne ikke bekræftes. Kontrollér Docker.');
         @unlink(pm_paths()['runtime'].'/status.json');
         pm_response(['ok'=>true,'message'=>'Newt er genstartet. Vent på næste kontrol.']);
     }
     pm_response(['ok'=>false,'error'=>'Ukendt handling.'],404);
 } catch (InvalidArgumentException $e) {pm_response(['ok'=>false,'error'=>$e->getMessage()],400);}
-catch (Throwable $e) {pm_response(['ok'=>false,'error'=>'Handlingen kunne ikke gennemføres. Kontrollér Docker, pluginets indstillinger og Unraid-loggen.'],500);}
+catch (PMException $e) {pm_response(['ok'=>false,'error'=>$e->getMessage()],503);}
+catch (Throwable $e) {
+    // Log a useful location without exposing exception messages, arguments or secrets.
+    error_log('Pangolin Manager: '.get_class($e).' in '.basename($e->getFile()).':'.$e->getLine());
+    pm_response(['ok'=>false,'error'=>'Der opstod en intern pluginfejl. Fejltype og placering er skrevet i Unraids PHP-log.'],500);
+}

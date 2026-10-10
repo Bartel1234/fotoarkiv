@@ -1,4 +1,4 @@
-# Validation — 0.1.0-beta.2
+# Validation — 0.1.0-beta.3
 
 Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 
@@ -6,7 +6,13 @@ Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 - Backend regression checks for validation, command/header injection, subprocess
   timeout, HTTP classification, unknown API schema, token redaction and notification
   outage/recovery behavior.
-- 40 backend regression checks and 15 real HTTP/PHP integration checks with a fixture Docker CLI.
+- 40 backend regression checks and 23 real HTTP/PHP integration checks, each run
+  with normal PHP and with `proc_open` disabled. Docker CLI and HTTP API are fixtures.
+- Docker API list/inspect parsing, CLI fallback, suggested Newt ordering, empty
+  list, missing container, malformed responses, controlled errors and secret
+  exclusion from error responses.
+- The environment prohibits AF_UNIX sockets. Docker API tests replace only the
+  transport with a local TCP fixture; real Unix socket access is not verified.
 - DOM checks with fixture API responses: status updates, save/settings, CSRF payload,
   restart confirmation/cancel, secret field behavior, hostile labels displayed as
   text, stale status, failed refresh and Dashboard tile interactions.
@@ -15,7 +21,12 @@ Performed locally with PHP 8.3, a real HTTP test server and jsdom:
 - Installer XML parsing, embedded payload SHA-256, extracted payload paths and
   install/remove shell syntax checked.
 
-Not performed: installation on a running Unraid server, real Docker interaction,
+User screenshots confirm installation and the Tools settings page on DeathStar
+(Unraid 7.3.2). Beta.2 container discovery failed with an uninformative error.
+The exact server-side cause is not confirmed. Beta.3 addresses socket/CLI/PHP
+compatibility and supplies actionable errors. Its on-server outcome is pending.
+
+Not performed: direct on-server testing, real Docker interaction,
 actual Pangolin/Newt API traffic, cron scheduling after a real reboot and delivery
 through Unraid's notification channels. Chromium cannot start in this execution
 environment, so full browser tests, screenshots and visual layout verification
@@ -33,7 +44,6 @@ The first on-server trial should verify:
 6. If enabled, exercise a sustained outage and one recovery notification.
 7. Verify removal stops future polling without removing Newt or settings.
 
-GitHub edition beta.2 adds the hosted installation/update URL and a higher Unraid
-manifest version. Application behavior is unchanged. XML, payload checksum,
-archive contents and installer scripts were validated after rebuilding. The
-published raw manifest must match the locally validated file.
+Beta.3 installer XML, embedded payload checksum, archive contents and installer
+scripts were validated after rebuilding. The published raw manifest must match
+the locally validated file.

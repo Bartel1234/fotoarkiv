@@ -1,7 +1,9 @@
 <?php
 declare(strict_types=1);
-// Pangolin Manager 0.1.0-beta.2. No third-party runtime dependencies.
-const PM_VERSION = '0.1.0-beta.2';
+// Pangolin Manager 0.1.0-beta.3. No third-party runtime dependencies.
+const PM_VERSION = '0.1.0-beta.3';
+// Only explicitly authored, safe messages from this class reach the browser.
+class PMException extends RuntimeException {}
 function pm_paths(): array {
     return ['config'=>'/boot/config/plugins/pangolin-manager/settings.json',
         'runtime'=>'/var/local/pangolin-manager', 'vars'=>'/var/local/emhttp/var.ini',
@@ -15,7 +17,7 @@ function pm_config(): array {
     $p=pm_paths();
     if (!is_file($p['config'])) return pm_defaults();
     $c=json_decode((string)file_get_contents($p['config']),true);
-    if (!is_array($c)) throw new RuntimeException('Indstillingerne kan ikke læses. Gem dem igen fra panelet.');
+    if (!is_array($c)) throw new PMException('Indstillingerne kan ikke læses. Gem dem igen fra panelet.');
     return array_replace(pm_defaults(),$c);
 }
 function pm_public_config(array $c): array {
@@ -23,14 +25,14 @@ function pm_public_config(array $c): array {
 }
 function pm_write(string $path, array $data): void {
     if (!is_dir(dirname($path)) && !mkdir(dirname($path),0700,true) && !is_dir(dirname($path)))
-        throw new RuntimeException('Mappen til indstillinger/status kunne ikke oprettes.');
+        throw new PMException('Mappen til indstillinger/status kunne ikke oprettes.');
     $tmp=tempnam(dirname($path),'.pm-');
-    if ($tmp===false) throw new RuntimeException('Kunne ikke oprette midlertidig fil.');
+    if ($tmp===false) throw new PMException('Kunne ikke oprette midlertidig fil.');
     try {
         if (file_put_contents($tmp,json_encode($data,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR))===false)
-            throw new RuntimeException('Kunne ikke gemme filen.');
+            throw new PMException('Kunne ikke gemme filen.');
         chmod($tmp,0600);
-        if (!rename($tmp,$path)) throw new RuntimeException('Kunne ikke gemme filen.');
+        if (!rename($tmp,$path)) throw new PMException('Kunne ikke gemme filen.');
     } finally { if (is_file($tmp)) unlink($tmp); }
 }
 function pm_url(string $url, bool $httpsOnly=false): string {
@@ -78,8 +80,21 @@ function pm_validate(array $in, array $old): array {
     return $c;
 }
 function pm_exec(array $args, float $timeout=4.0): array {
+    // PHP-FPM's PATH can differ from the interactive shell on Unraid.
+    if (($args[0]??'')==='docker') foreach (['/usr/bin/docker','/usr/local/bin/docker','/bin/docker'] as $binary) {
+        if (is_executable($binary)) {$args[0]=$binary;break;}
+    }
+    if (!function_exists('proc_open')) {
+        if (!function_exists('exec')) return ['code'=>127,'out'=>'','err'=>'PHP tillader hverken proc_open eller exec.'];
+        $timer=is_executable('/usr/bin/timeout')?'/usr/bin/timeout':(is_executable('/bin/timeout')?'/bin/timeout':'');
+        if ($timer==='') return ['code'=>127,'out'=>'','err'=>'Kommandoen timeout mangler.'];
+        // Every argument is quoted separately; only our fixed redirection is shell syntax.
+        $command=implode(' ',array_map('escapeshellarg',array_merge([$timer,'--signal=KILL',sprintf('%.3fs',max(.001,$timeout))],$args)));
+        $lines=[];$code=127;exec($command.' 2>&1',$lines,$code);$out=implode("\n",$lines);
+        return ['code'=>$code===137?124:$code,'out'=>substr($out,0,1048576),'err'=>$code===0?'':'Kommando fejlede (kode '.$code.').'];
+    }
     // proc_open receives an argument array: user input is never parsed by a shell.
-    $p=proc_open($args,[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
+    $p=@proc_open($args,[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
     if (!is_resource($p)) return ['code'=>127,'out'=>'','err'=>'Kommando kunne ikke startes.'];
     fclose($pipes[0]); stream_set_blocking($pipes[1],false); stream_set_blocking($pipes[2],false);
     $start=microtime(true);$out='';$err='';$code=-1;
@@ -95,15 +110,42 @@ function pm_exec(array $args, float $timeout=4.0): array {
     fclose($pipes[1]);fclose($pipes[2]);$closed=proc_close($p);
     return ['code'=>$code<0?$closed:$code,'out'=>$out,'err'=>$err];
 }
+function pm_docker_request(string $path): array {
+    // Docker reads use the same local Unix socket as Unraid's Docker Manager.
+    // No TCP daemon access, redirects, credentials or user-selected socket.
+    $socket='/var/run/docker.sock';
+    if (!file_exists($socket)) return ['code'=>0,'data'=>null,'error'=>'Dockers lokale forbindelse mangler.'];
+    if (!function_exists('curl_init') || !defined('CURLOPT_UNIX_SOCKET_PATH'))
+        return ['code'=>0,'data'=>null,'error'=>'PHP cURL understøtter ikke Dockers lokale forbindelse.'];
+    $h=curl_init('http://localhost'.$path);$body='';
+    curl_setopt_array($h,[CURLOPT_UNIX_SOCKET_PATH=>$socket,CURLOPT_PROXY=>'',CURLOPT_CONNECTTIMEOUT_MS=>1000,
+        CURLOPT_TIMEOUT_MS=>3000,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROTOCOLS=>CURLPROTO_HTTP,
+        CURLOPT_WRITEFUNCTION=>function($h,$chunk)use(&$body){if(strlen($body)+strlen($chunk)>4194304)return 0;$body.=$chunk;return strlen($chunk);}]);
+    curl_exec($h);$error=curl_errno($h);$code=(int)curl_getinfo($h,CURLINFO_RESPONSE_CODE);curl_close($h);
+    if ($error) return ['code'=>0,'data'=>null,'error'=>$error===28?'Docker svarede ikke inden for 3 sekunder.':'Pluginet kunne ikke åbne Dockers lokale forbindelse.'];
+    $data=json_decode($body,true);
+    return ['code'=>$code,'data'=>$data,'error'=>$code===200 && is_array($data)?'':'Docker svarede med HTTP '.$code.' eller et ugyldigt svar.'];
+}
 function pm_containers(): array {
-    $r=pm_exec(['docker','ps','-a','--format','{{json .}}']);
-    if ($r['code']!==0) throw new RuntimeException('Docker svarer ikke. Kontrollér at Docker er aktiveret i Unraid.');
+    $socket=pm_docker_request('/containers/json?all=1');
     $list=[];
-    foreach (explode("\n",trim($r['out'])) as $line) {
-        $v=json_decode($line,true);if (!is_array($v)) continue;
-        $list[]=['name'=>$v['Names']??'', 'image'=>$v['Image']??'', 'state'=>$v['State']??'',
-            'suggested'=>(bool)preg_match('~newt|pangolin-cli~i',($v['Names']??'').' '.($v['Image']??''))];
+    if ($socket['error']==='' && is_array($socket['data']) && array_is_list($socket['data'])) {
+        foreach ($socket['data'] as $v) if (is_array($v)) {
+            $name=ltrim((string)($v['Names'][0]??''),'/');if($name==='')continue;
+            $list[]=['name'=>$name,'image'=>$v['Image']??'','state'=>$v['State']??''];
+        }
+    } else {
+        // Also supports installations where socket reads are unavailable.
+        $r=pm_exec(['docker','ps','-a','--format','{{json .}}']);
+        if ($r['code']!==0) throw new PMException('Containerlisten kunne ikke hentes. '.$socket['error'].' Docker-kommandoen fejlede (kode '.$r['code'].'). Kontrollér Settings → Docker i Unraid.');
+        foreach (explode("\n",trim($r['out'])) as $line) {
+            if ($line==='')continue;
+            $v=json_decode($line,true);
+            if (!is_array($v) || empty($v['Names'])) throw new PMException('Docker returnerede en ugyldig containerliste.');
+            $list[]=['name'=>$v['Names'],'image'=>$v['Image']??'','state'=>$v['State']??''];
+        }
     }
+    foreach ($list as &$v) $v['suggested']=(bool)preg_match('~newt|pangolin-cli~i',$v['name'].' '.$v['image']);unset($v);
     usort($list,fn($a,$b)=>($b['suggested']<=>$a['suggested'])?:strcasecmp($a['name'],$b['name']));return $list;
 }
 function pm_redact(string $text, array $secrets=[]): string {
@@ -161,6 +203,9 @@ function pm_site_state(array $response,string $id): array {
 }
 function pm_inspect(string $name): ?array {
     if ($name==='') return null;
+    $socket=pm_docker_request('/containers/'.rawurlencode($name).'/json');
+    if ($socket['code']===404) return null;
+    if ($socket['error']==='' && is_array($socket['data']) && isset($socket['data']['Id'])) return $socket['data'];
     $r=pm_exec(['docker','inspect','--type','container',$name]);
     if ($r['code']!==0) return null;
     $a=json_decode($r['out'],true);return is_array($a)&&isset($a[0])?$a[0]:null;
@@ -255,13 +300,13 @@ function pm_get_status(): array {
 function pm_save_config(array $c): void {
     // Serialize against polling: a worker may not publish old settings after a save.
     $p=pm_paths();if (!is_dir($p['runtime']) && !mkdir($p['runtime'],0700,true) && !is_dir($p['runtime']))
-        throw new RuntimeException('Statusmappen kunne ikke oprettes.');
+        throw new PMException('Statusmappen kunne ikke oprettes.');
     $lock=fopen($p['runtime'].'/collect.lock','c');
-    if (!$lock)throw new RuntimeException('Statuslåsen kunne ikke oprettes.');
+    if (!$lock)throw new PMException('Statuslåsen kunne ikke oprettes.');
     $deadline=microtime(true)+15;
     try {
         while (!flock($lock,LOCK_EX|LOCK_NB)) {
-            if (microtime(true)>$deadline)throw new RuntimeException('En kontrol er stadig i gang. Prøv at gemme igen.');
+            if (microtime(true)>$deadline)throw new PMException('En kontrol er stadig i gang. Prøv at gemme igen.');
             usleep(50000);
         }
         pm_write($p['config'],$c);
